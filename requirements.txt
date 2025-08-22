@@ -1,0 +1,5 @@
+flask
+requests
+wikipedia
+mistralai
+gunicorn
