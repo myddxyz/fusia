@@ -1298,6 +1298,17 @@ def index():
                 hideAuthorModal();
             }
         });
+
+        // Close language dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            const dropdown = document.querySelector('.language-dropdown');
+            const options = document.getElementById('languageOptions');
+            
+            if (dropdown && options && !dropdown.contains(e.target)) {
+                dropdown.classList.remove('active');
+                options.classList.remove('show');
+            }
+        });
     </script>
 </body>
 </html>'''
