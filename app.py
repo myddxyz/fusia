@@ -521,11 +521,11 @@ def index():
         .btn-primary {
             background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
             color: white;
-            box-shadow: 8px 8px 16px rgba(102, 126, 234, 0.3), -8px -8px 16px rgba(255, 255, 255, 0.8);
+            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
         }
         
         .btn-primary:hover:not(:disabled) {
-            box-shadow: 12px 12px 20px rgba(102, 126, 234, 0.4), -12px -12px 20px rgba(255, 255, 255, 0.9);
+            box-shadow: 12px 12px 20px var(--shadow-light), -12px -12px 20px var(--shadow-dark);
         }
         
         .controls {
