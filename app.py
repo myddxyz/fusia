@@ -448,59 +448,14 @@ def index():
             display: flex; justify-content: space-between; align-items: center;
         }
         
-        .language-dropdown {
-            position: relative; display: inline-block;
-        }
-        
         .language-selector {
             background: var(--bg-primary); border: none; border-radius: 15px;
             padding: 10px 15px; cursor: pointer; font-size: 0.9rem;
             color: var(--text-primary); transition: all 0.2s ease;
             box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
-            display: flex; align-items: center; gap: 8px; min-width: 120px;
         }
         
         .language-selector:hover { transform: translateY(-2px); }
-        
-        .language-dropdown.active .language-selector {
-            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark);
-        }
-        
-        .language-options {
-            position: absolute; top: 100%; left: 0; right: 0; z-index: 1000;
-            background: var(--bg-primary); border-radius: 15px; margin-top: 5px;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-            overflow: hidden; opacity: 0; visibility: hidden; transform: translateY(-10px);
-            transition: all 0.3s ease;
-        }
-        
-        .language-options.show {
-            opacity: 1; visibility: visible; transform: translateY(0);
-        }
-        
-        .language-option {
-            background: none; border: none; width: 100%; text-align: left;
-            padding: 12px 15px; font-size: 0.9rem; color: var(--text-primary);
-            cursor: pointer; transition: all 0.2s ease;
-            display: flex; align-items: center; gap: 8px;
-        }
-        
-        .language-option:hover {
-            background: var(--bg-secondary); transform: translateX(5px);
-        }
-        
-        .language-option.active {
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            color: white;
-        }
-        
-        .dropdown-arrow {
-            font-size: 0.7rem; transition: transform 0.3s ease;
-        }
-        
-        .language-dropdown.active .dropdown-arrow {
-            transform: rotate(180deg);
-        }
         
         .right-controls { display: flex; align-items: center; gap: 15px; }
         
@@ -807,23 +762,11 @@ def index():
     <div class="container">
         <div class="header">
             <div class="header-controls">
-                <div class="language-dropdown" id="languageDropdown">
-                    <button class="language-selector" id="languageSelector" onclick="toggleLanguageDropdown()">
-                        <span id="currentLanguage">🇺🇸 English</span>
-                        <span class="dropdown-arrow">▼</span>
-                    </button>
-                    <div class="language-options" id="languageOptions">
-                        <button class="language-option active" onclick="selectLanguage('en', '🇺🇸 English', this)">
-                            🇺🇸 English
-                        </button>
-                        <button class="language-option" onclick="selectLanguage('fr', '🇫🇷 Français', this)">
-                            🇫🇷 Français
-                        </button>
-                        <button class="language-option" onclick="selectLanguage('es', '🇪🇸 Español', this)">
-                            🇪🇸 Español
-                        </button>
-                    </div>
-                </div>
+                <select class="language-selector" id="languageSelector" onchange="changeLanguage()">
+                    <option value="en">🇺🇸 English</option>
+                    <option value="fr">🇫🇷 Français</option>
+                    <option value="es">🇪🇸 Español</option>
+                </select>
                 
                 <div class="right-controls">
                     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
@@ -1135,65 +1078,8 @@ def index():
         function loadLanguage() {
             const savedLanguage = localStorage.getItem('language') || 'en';
             currentLanguage = savedLanguage;
-            updateLanguageDisplay();
+            document.getElementById('languageSelector').value = savedLanguage;
             updateTranslations();
-        }
-
-        function updateLanguageDisplay() {
-            const languageNames = {
-                'en': '🇺🇸 English',
-                'fr': '🇫🇷 Français',
-                'es': '🇪🇸 Español'
-            };
-            
-            const currentLanguageEl = document.getElementById('currentLanguage');
-            if (currentLanguageEl) {
-                currentLanguageEl.textContent = languageNames[currentLanguage];
-            }
-            
-            // Update active option
-            document.querySelectorAll('.language-option').forEach(option => {
-                option.classList.remove('active');
-            });
-            
-            const activeOption = document.querySelector(`[onclick*="'${currentLanguage}'"]`);
-            if (activeOption) {
-                activeOption.classList.add('active');
-            }
-        }
-
-        function toggleLanguageDropdown() {
-            const dropdown = document.getElementById('languageDropdown');
-            const options = document.getElementById('languageOptions');
-            
-            if (dropdown && options) {
-                const isActive = dropdown.classList.contains('active');
-                
-                if (isActive) {
-                    dropdown.classList.remove('active');
-                    options.classList.remove('show');
-                } else {
-                    dropdown.classList.add('active');
-                    options.classList.add('show');
-                }
-            }
-        }
-
-        function selectLanguage(langCode, langName, element) {
-            currentLanguage = langCode;
-            localStorage.setItem('language', currentLanguage);
-            
-            // Close dropdown
-            const dropdown = document.getElementById('languageDropdown');
-            const options = document.getElementById('languageOptions');
-            if (dropdown && options) {
-                dropdown.classList.remove('active');
-                options.classList.remove('show');
-            }
-            
-            updateLanguageDisplay();
-            updateTranslations();
-            initializeSuggestions();
         }
 
         function toggleTheme() {
@@ -1210,6 +1096,14 @@ def index():
             }
         }
 
+        function changeLanguage() {
+            const selector = document.getElementById('languageSelector');
+            currentLanguage = selector.value;
+            localStorage.setItem('language', currentLanguage);
+            updateTranslations();
+            initializeSuggestions();
+        }
+
         function updateTranslations() {
             const elements = document.querySelectorAll('[data-text-key]');
             elements.forEach(element => {
@@ -1219,13 +1113,432 @@ def index():
                 }
             });
 
-            //
-app = Flask(__name__)
+            // Update placeholder
+            const themeInput = document.getElementById('theme');
+            if (themeInput && translations[currentLanguage].search_placeholder) {
+                themeInput.placeholder = translations[currentLanguage].search_placeholder;
+            }
+        }
 
-class WikipediaMistralSummarizer:
-    def __init__(self):
-        """
-        Initialise le résumeur avec clés API depuis variables d'environnement
-        """
-        # Clés API Mistral depuis variables d'environnement OU valeurs par défaut
-        self.
+        function selectLength(length, element) {
+            document.querySelectorAll('.length-btn').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            currentLength = length;
+        }
+
+        function selectMode(mode, element) {
+            document.querySelectorAll('.mode-chip').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            currentMode = mode;
+        }
+
+        function showAuthorModal() {
+            document.getElementById('authorModal').classList.add('active');
+        }
+
+        function hideAuthorModal() {
+            document.getElementById('authorModal').classList.remove('active');
+        }
+
+        function copyResult() {
+            const content = document.getElementById('resultContent');
+            const copyBtn = document.getElementById('copyBtn');
+            
+            if (!content || !content.textContent) {
+                showNotification(translations[currentLanguage].copy_error, 'error');
+                return;
+            }
+
+            // Get text content without HTML
+            const textContent = content.textContent || content.innerText;
+            
+            navigator.clipboard.writeText(textContent).then(function() {
+                copyBtn.textContent = '✅';
+                copyBtn.classList.add('success');
+                showNotification(translations[currentLanguage].copied, 'success');
+                
+                setTimeout(() => {
+                    copyBtn.textContent = '📋';
+                    copyBtn.classList.remove('success');
+                }, 2000);
+            }).catch(function() {
+                showNotification(translations[currentLanguage].copy_error, 'error');
+            });
+        }
+
+        function handleFormSubmit(event) {
+            event.preventDefault();
+            
+            if (isProcessing) {
+                showNotification(translations[currentLanguage].already_processing, 'info');
+                return false;
+            }
+
+            const themeInput = document.getElementById('theme');
+            const theme = themeInput ? themeInput.value.trim() : '';
+            
+            if (!theme || theme.length < 2) {
+                showNotification(translations[currentLanguage].invalid_theme, 'error');
+                if (themeInput) themeInput.focus();
+                return false;
+            }
+
+            processTheme(theme, currentLength, currentLanguage, currentMode);
+            return false;
+        }
+
+        function initializeSuggestions() {
+            const container = document.getElementById('suggestionChips');
+            if (!container) return;
+            
+            container.innerHTML = '';
+            const themes = popularThemes[currentLanguage] || popularThemes.en;
+            const shuffled = [...themes].sort(() => 0.5 - Math.random()).slice(0, 6);
+            
+            shuffled.forEach(theme => {
+                const chip = document.createElement('button');
+                chip.className = 'chip';
+                chip.textContent = theme;
+                chip.type = 'button';
+                chip.onclick = function() {
+                    const themeInput = document.getElementById('theme');
+                    if (themeInput) {
+                        themeInput.value = theme;
+                        themeInput.focus();
+                    }
+                };
+                container.appendChild(chip);
+            });
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                if (response.ok) {
+                    const stats = await response.json();
+                    updateStatsDisplay(stats);
+                }
+            } catch (error) {
+                console.log('Stats error:', error);
+            }
+        }
+
+        function updateStatsDisplay(stats) {
+            const elements = {
+                totalRequests: document.getElementById('totalRequests'),
+                cacheHits: document.getElementById('cacheHits'),
+                wikiSuccess: document.getElementById('wikiSuccess'),
+                aiOnly: document.getElementById('aiOnly')
+            };
+
+            if (elements.totalRequests) elements.totalRequests.textContent = stats.requests || 0;
+            if (elements.cacheHits) elements.cacheHits.textContent = stats.cache_hits || 0;
+            if (elements.wikiSuccess) elements.wikiSuccess.textContent = stats.wikipedia_success || 0;
+            if (elements.aiOnly) elements.aiOnly.textContent = stats.mistral_only || 0;
+        }
+
+        async function processTheme(theme, lengthMode, language, mode) {
+            isProcessing = true;
+            const generateBtn = document.getElementById('generateBtn');
+            const generateText = generateBtn.querySelector('[data-text-key="generate"]');
+            
+            if (generateBtn) {
+                generateBtn.disabled = true;
+                if (generateText) generateText.textContent = translations[currentLanguage].processing_theme;
+            }
+            
+            showStatus(translations[currentLanguage].searching);
+            hideResult();
+
+            try {
+                const requestData = {
+                    theme: theme,
+                    length_mode: lengthMode,
+                    language: language,
+                    mode: mode
+                };
+                
+                updateProgress(20);
+                updateStatus(translations[currentLanguage].searching);
+                
+                const response = await fetch('/api/summarize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                updateProgress(60);
+                updateStatus(translations[currentLanguage].generating);
+
+                if (!response.ok) {
+                    let errorMessage = `HTTP Error ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error || errorMessage;
+                    } catch (e) {
+                        const errorText = await response.text();
+                        errorMessage = errorText || errorMessage;
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Unknown error');
+                }
+
+                updateProgress(100);
+                updateStatus(translations[currentLanguage].completed);
+                await sleep(500);
+
+                showResult(data);
+                hideStatus();
+                
+                setTimeout(loadStats, 500);
+                showNotification(translations[currentLanguage].summary_generated, 'success');
+
+            } catch (error) {
+                console.error('Error:', error);
+                showNotification(error.message || translations[currentLanguage].processing_error, 'error');
+                hideStatus();
+            } finally {
+                isProcessing = false;
+                if (generateBtn && generateText) {
+                    generateBtn.disabled = false;
+                    generateText.textContent = translations[currentLanguage].generate;
+                }
+            }
+        }
+
+        function updateProgress(percent) {
+            const progressFill = document.getElementById('progressFill');
+            if (progressFill) progressFill.style.width = percent + '%';
+        }
+
+        function updateStatus(message) {
+            const statusText = document.getElementById('statusText');
+            if (statusText) statusText.textContent = message;
+        }
+
+        function showStatus(message) {
+            updateStatus(message);
+            const statusDiv = document.getElementById('status');
+            if (statusDiv) statusDiv.classList.add('active');
+            updateProgress(0);
+        }
+
+        function hideStatus() {
+            const statusDiv = document.getElementById('status');
+            if (statusDiv) statusDiv.classList.remove('active');
+            setTimeout(() => updateProgress(0), 300);
+        }
+
+        function showResult(data) {
+            const elements = {
+                title: document.getElementById('resultTitle'),
+                content: document.getElementById('resultContent'),
+                meta: document.getElementById('resultMeta'),
+                url: document.getElementById('resultUrl'),
+                link: document.getElementById('wikiLink'),
+                result: document.getElementById('result')
+            };
+            
+            const titleSpan = elements.title ? elements.title.querySelector('[data-text-key="generated_summary"]') : null;
+            if (titleSpan) {
+                elements.title.innerHTML = '📖 <span data-text-key="generated_summary">' + translations[currentLanguage].generated_summary + '</span>';
+            }
+            if (elements.content) elements.content.innerHTML = data.summary;
+            
+            const sourceIcon = data.source === 'wikipedia' ? '📖' : '🤖';
+            const sourceText = data.source === 'wikipedia' ? translations[currentLanguage].wikipedia : translations[currentLanguage].ai_only;
+            
+            // Ajouter le mode dans les métadonnées
+            const modeText = currentMode !== 'general' ? ` • ${currentMode}` : '';
+            let metaText = `${sourceIcon} ${sourceText} • ${data.processing_time}s • ${data.length_mode}${modeText}`;
+            
+            if (data.method) metaText += ` • ${data.method}`;
+            if (elements.meta) elements.meta.textContent = metaText;
+            
+            if (data.url && elements.url && elements.link) {
+                const sourceSpan = elements.url.querySelector('[data-text-key="wikipedia_source"]');
+                if (sourceSpan) sourceSpan.textContent = translations[currentLanguage].wikipedia_source;
+                elements.link.href = data.url;
+                elements.link.textContent = data.url;
+                elements.url.style.display = 'block';
+            } else if (elements.url) {
+                elements.url.style.display = 'none';
+            }
+
+            if (elements.result) elements.result.classList.add('active');
+        }
+
+        function hideResult() {
+            const resultDiv = document.getElementById('result');
+            if (resultDiv) resultDiv.classList.remove('active');
+        }
+
+        function clearAll() {
+            const themeInput = document.getElementById('theme');
+            if (themeInput) {
+                themeInput.value = '';
+                themeInput.focus();
+            }
+            hideStatus();
+            hideResult();
+            isProcessing = false;
+            
+            // Reset mode to general
+            currentMode = 'general';
+            document.querySelectorAll('.mode-chip').forEach(btn => btn.classList.remove('active'));
+            document.querySelector('.mode-chip[onclick*="general"]').classList.add('active');
+            
+            const generateBtn = document.getElementById('generateBtn');
+            const generateText = generateBtn ? generateBtn.querySelector('[data-text-key="generate"]') : null;
+            if (generateBtn) {
+                generateBtn.disabled = false;
+                if (generateText) generateText.textContent = translations[currentLanguage].generate;
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            document.querySelectorAll('.notification').forEach(n => n.remove());
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            setTimeout(() => notification.classList.add('show'), 100);
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+                const target = e.target;
+                if (target && target.id === 'theme' && !isProcessing && target.value.trim()) {
+                    e.preventDefault();
+                    handleFormSubmit(e);
+                }
+            }
+            
+            if (e.key === 'Escape') {
+                hideAuthorModal();
+            }
+        });
+
+        // Click outside modal to close
+        document.getElementById('authorModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideAuthorModal();
+            }
+        });
+
+        // Close language dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            const dropdown = document.querySelector('.language-dropdown');
+            const options = document.getElementById('languageOptions');
+            
+            if (dropdown && options && !dropdown.contains(e.target)) {
+                dropdown.classList.remove('active');
+                options.classList.remove('show');
+            }
+        });
+    </script>
+</body>
+</html>'''
+
+@app.route('/api/summarize', methods=['POST'])
+def summarize():
+    """API endpoint pour traiter les résumés avec support multilingue et modes thématiques"""
+    try:
+        print("🚀 REQUÊTE /api/summarize")
+        
+        if not request.is_json:
+            return jsonify({'success': False, 'error': 'Content-Type doit être application/json'}), 400
+        
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'error': 'Données JSON requises'}), 400
+        
+        theme = data.get('theme')
+        length_mode = data.get('length_mode', 'moyen')
+        language = data.get('language', 'en')
+        mode = data.get('mode', 'general')
+        
+        if not theme or not theme.strip():
+            return jsonify({'success': False, 'error': 'Thème requis'}), 400
+        
+        print(f"🚀 TRAITEMENT: '{theme}' ({length_mode}, {language}, {mode})")
+        
+        result = summarizer.process_theme(theme, length_mode, language, mode)
+        
+        if not result.get('success'):
+            error_msg = result.get('error', 'Erreur inconnue')
+            print(f"❌ ÉCHEC: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 500
+        
+        print(f"✅ SUCCÈS: {result.get('title', 'Sans titre')}")
+        return jsonify(result), 200
+        
+    except Exception as e:
+        error_msg = str(e)
+        print(f"💥 ERREUR ENDPOINT: {error_msg}")
+        return jsonify({'success': False, 'error': f'Erreur serveur: {error_msg}'}), 500
+
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    """API endpoint pour les statistiques"""
+    try:
+        return jsonify(summarizer.stats), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint pour Render"""
+    return jsonify({'status': 'OK', 'service': 'Wikipedia Summarizer Pro'}), 200
+
+if __name__ == '__main__':
+    print("🌐 WIKIPEDIA SUMMARIZER PRO - VERSION ENHANCED WITH THEMATIC MODES")
+    print("="*70)
+    
+    try:
+        from mistralai import Mistral
+        import wikipedia
+        print("✅ Dépendances OK")
+        
+        # Configuration pour Render
+        port = int(os.environ.get('PORT', 4000))
+        debug_mode = os.environ.get('FLASK_ENV') != 'production'
+        
+        print(f"🌐 Port: {port}")
+        print(f"🔧 Debug: {debug_mode}")
+        print(f"🔑 Clés API configurées: {len(summarizer.api_keys)}")
+        
+    except ImportError as e:
+        print(f"❌ ERREUR: {e}")
+        exit(1)
+    except Exception as e:
+        print(f"⚠️ Avertissement: {e}")
+    
+    print("🚀 DÉMARRAGE...")
+    
+    # Démarrage adapté pour Render
+    app.run(
+        host='0.0.0.0', 
+        port=port, 
+        debug=debug_mode
+    )
