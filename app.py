@@ -298,8 +298,7 @@ summarizer = WikipediaMistralSummarizer()
 @app.route('/')
 def index():
     """Page d'accueil avec l'interface"""
-    html_content = """
-<!DOCTYPE html>
+    return """<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
@@ -816,7 +815,7 @@ def index():
 <body>
     <div class="container">
         <div class="header">
-            <button class="theme-toggle" id="themeToggle" title="Changer de thème">
+            <button class="theme-toggle" onclick="toggleTheme()" title="Changer de thème">
                 <span id="themeIcon">🌙</span>
             </button>
             <h1 class="title">🌟 Wikipedia Summarizer Pro</h1>
@@ -831,7 +830,7 @@ def index():
         </div>
 
         <div class="form-section">
-            <form id="summarizerForm">
+            <form id="summarizerForm" onsubmit="handleFormSubmit(event)">
                 <div class="form-group">
                     <label class="label" for="theme">🔍 Thème à rechercher</label>
                     <input 
@@ -852,13 +851,13 @@ def index():
                 <div class="form-group">
                     <label class="label">📏 Longueur du résumé</label>
                     <div class="length-selector">
-                        <button type="button" class="length-btn" data-length="court">
+                        <button type="button" class="length-btn" onclick="selectLength('court', this)">
                             📝 Court<br><small>150-200 mots</small>
                         </button>
-                        <button type="button" class="length-btn active" data-length="moyen">
+                        <button type="button" class="length-btn active" onclick="selectLength('moyen', this)">
                             📄 Moyen<br><small>250-350 mots</small>
                         </button>
-                        <button type="button" class="length-btn" data-length="long">
+                        <button type="button" class="length-btn" onclick="selectLength('long', this)">
                             📚 Long<br><small>400-500 mots</small>
                         </button>
                     </div>
@@ -868,7 +867,7 @@ def index():
                     <button type="submit" class="btn btn-primary" id="generateBtn">
                         ✨ Générer le résumé
                     </button>
-                    <button type="button" class="btn" id="clearBtn">
+                    <button type="button" class="btn" onclick="clearAll()">
                         🗑️ Effacer
                     </button>
                 </div>
@@ -897,6 +896,7 @@ def index():
     </div>
 
     <script>
+        // Variables globales
         let isProcessing = false;
         let currentLength = 'moyen';
         
@@ -906,43 +906,23 @@ def index():
             "Photosynthèse", "Bitcoin", "Système solaire"
         ];
 
-        const form = document.getElementById('summarizerForm');
-        const themeInput = document.getElementById('theme');
-        const generateBtn = document.getElementById('generateBtn');
-        const clearBtn = document.getElementById('clearBtn');
-        const themeToggle = document.getElementById('themeToggle');
-        const statusDiv = document.getElementById('status');
-        const resultDiv = document.getElementById('result');
-        const progressFill = document.getElementById('progressFill');
-        const statusText = document.getElementById('statusText');
-
+        // Initialisation au chargement
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Page chargée, initialisation...');
             initializeSuggestions();
-            initializeLengthSelector();
             initializeTheme();
             loadStats();
-            bindEvents();
-        });
-
-        function bindEvents() {
-            if (form) {
-                form.addEventListener('submit', handleFormSubmit);
-            }
-            if (themeToggle) {
-                themeToggle.addEventListener('click', toggleTheme);
-            }
-            if (clearBtn) {
-                clearBtn.addEventListener('click', clearAll);
-            }
-            document.addEventListener('keydown', handleKeyDown);
+            
+            // Focus sur l'input
+            const themeInput = document.getElementById('theme');
             if (themeInput) {
                 themeInput.focus();
             }
-        }
+        });
 
-        function handleFormSubmit(e) {
-            e.preventDefault();
+        // Gestion des événements
+        function handleFormSubmit(event) {
+            event.preventDefault();
             console.log('Formulaire soumis');
             
             if (isProcessing) {
@@ -950,7 +930,9 @@ def index():
                 return;
             }
 
-            const theme = themeInput.value.trim();
+            const themeInput = document.getElementById('theme');
+            const theme = themeInput ? themeInput.value.trim() : '';
+            
             if (!theme) {
                 showNotification('Veuillez entrer un thème de recherche', 'error');
                 return;
@@ -960,10 +942,23 @@ def index():
             processTheme(theme, currentLength);
         }
 
+        function selectLength(length, element) {
+            // Retirer la classe active de tous les boutons
+            document.querySelectorAll('.length-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Ajouter la classe active au bouton cliqué
+            element.classList.add('active');
+            currentLength = length;
+            console.log('Longueur sélectionnée:', currentLength);
+        }
+
         function initializeSuggestions() {
             const container = document.getElementById('suggestionChips');
             if (!container) return;
             
+            // Mélanger et prendre 6 suggestions
             const shuffled = popularThemes.sort(() => 0.5 - Math.random()).slice(0, 6);
             
             shuffled.forEach(theme => {
@@ -971,25 +966,14 @@ def index():
                 chip.className = 'chip';
                 chip.textContent = theme;
                 chip.type = 'button';
-                chip.addEventListener('click', function() {
-                    themeInput.value = theme;
-                    themeInput.focus();
-                });
+                chip.onclick = function() {
+                    const themeInput = document.getElementById('theme');
+                    if (themeInput) {
+                        themeInput.value = theme;
+                        themeInput.focus();
+                    }
+                };
                 container.appendChild(chip);
-            });
-        }
-
-        function initializeLengthSelector() {
-            const lengthBtns = document.querySelectorAll('.length-btn');
-            
-            lengthBtns.forEach(btn => {
-                btn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    lengthBtns.forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    currentLength = this.dataset.length;
-                    console.log('Longueur sélectionnée:', currentLength);
-                });
             });
         }
 
@@ -997,7 +981,10 @@ def index():
             const savedTheme = localStorage.getItem('theme') || 'light';
             if (savedTheme === 'dark') {
                 document.documentElement.setAttribute('data-theme', 'dark');
-                document.getElementById('themeIcon').textContent = '☀️';
+                const themeIcon = document.getElementById('themeIcon');
+                if (themeIcon) {
+                    themeIcon.textContent = '☀️';
+                }
             }
         }
 
@@ -1006,7 +993,10 @@ def index():
             const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
             
             document.documentElement.setAttribute('data-theme', newTheme);
-            document.getElementById('themeIcon').textContent = newTheme === 'dark' ? '☀️' : '🌙';
+            const themeIcon = document.getElementById('themeIcon');
+            if (themeIcon) {
+                themeIcon.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+            }
             localStorage.setItem('theme', newTheme);
         }
 
@@ -1023,23 +1013,29 @@ def index():
         }
 
         function updateStatsDisplay(stats) {
-            const totalEl = document.getElementById('totalRequests');
-            const cacheEl = document.getElementById('cacheHits');
-            const wikiEl = document.getElementById('wikiSuccess');
-            const aiEl = document.getElementById('aiOnly');
+            const elements = {
+                totalRequests: document.getElementById('totalRequests'),
+                cacheHits: document.getElementById('cacheHits'),
+                wikiSuccess: document.getElementById('wikiSuccess'),
+                aiOnly: document.getElementById('aiOnly')
+            };
 
-            if (totalEl) totalEl.textContent = stats.requests || 0;
-            if (cacheEl) cacheEl.textContent = stats.cache_hits || 0;
-            if (wikiEl) wikiEl.textContent = stats.wikipedia_success || 0;
-            if (aiEl) aiEl.textContent = stats.mistral_only || 0;
+            if (elements.totalRequests) elements.totalRequests.textContent = stats.requests || 0;
+            if (elements.cacheHits) elements.cacheHits.textContent = stats.cache_hits || 0;
+            if (elements.wikiSuccess) elements.wikiSuccess.textContent = stats.wikipedia_success || 0;
+            if (elements.aiOnly) elements.aiOnly.textContent = stats.mistral_only || 0;
         }
 
         async function processTheme(theme, lengthMode) {
             console.log('processTheme appelé avec:', theme, lengthMode);
             
             isProcessing = true;
-            generateBtn.disabled = true;
-            generateBtn.textContent = 'Traitement...';
+            const generateBtn = document.getElementById('generateBtn');
+            
+            if (generateBtn) {
+                generateBtn.disabled = true;
+                generateBtn.textContent = '⏳ Traitement...';
+            }
             
             showStatus('Recherche en cours...');
             hideResult();
@@ -1048,7 +1044,7 @@ def index():
                 updateProgress(25);
                 await sleep(300);
                 
-                statusText.textContent = 'Analyse du contenu...';
+                updateStatus('Analyse du contenu...');
                 updateProgress(50);
                 await sleep(300);
 
@@ -1067,7 +1063,7 @@ def index():
 
                 console.log('Réponse reçue:', response.status);
 
-                statusText.textContent = 'Génération du résumé...';
+                updateStatus('Génération du résumé...');
                 updateProgress(75);
                 await sleep(300);
 
@@ -1079,7 +1075,7 @@ def index():
                 const data = await response.json();
                 console.log('Données reçues:', data);
 
-                statusText.textContent = 'Résumé terminé!';
+                updateStatus('Résumé terminé!');
                 updateProgress(100);
                 await sleep(500);
 
@@ -1094,25 +1090,41 @@ def index():
                 hideStatus();
             } finally {
                 isProcessing = false;
-                generateBtn.disabled = false;
-                generateBtn.textContent = 'Générer le résumé';
+                if (generateBtn) {
+                    generateBtn.disabled = false;
+                    generateBtn.textContent = '✨ Générer le résumé';
+                }
             }
         }
 
         function updateProgress(percent) {
+            const progressFill = document.getElementById('progressFill');
             if (progressFill) {
                 progressFill.style.width = percent + '%';
             }
         }
 
+        function updateStatus(message) {
+            const statusText = document.getElementById('statusText');
+            if (statusText) {
+                statusText.textContent = message;
+            }
+        }
+
         function showStatus(message) {
-            if (statusText) statusText.textContent = message;
-            if (statusDiv) statusDiv.classList.add('active');
+            updateStatus(message);
+            const statusDiv = document.getElementById('status');
+            if (statusDiv) {
+                statusDiv.classList.add('active');
+            }
             updateProgress(0);
         }
 
         function hideStatus() {
-            if (statusDiv) statusDiv.classList.remove('active');
+            const statusDiv = document.getElementById('status');
+            if (statusDiv) {
+                statusDiv.classList.remove('active');
+            }
             setTimeout(() => {
                 updateProgress(0);
             }, 300);
@@ -1121,14 +1133,17 @@ def index():
         function showResult(data) {
             console.log('Affichage du résultat:', data);
             
-            const titleEl = document.getElementById('resultTitle');
-            const contentEl = document.getElementById('resultContent');
-            const metaEl = document.getElementById('resultMeta');
-            const urlEl = document.getElementById('resultUrl');
-            const linkEl = document.getElementById('wikiLink');
+            const elements = {
+                title: document.getElementById('resultTitle'),
+                content: document.getElementById('resultContent'),
+                meta: document.getElementById('resultMeta'),
+                url: document.getElementById('resultUrl'),
+                link: document.getElementById('wikiLink'),
+                result: document.getElementById('result')
+            };
             
-            if (titleEl) titleEl.textContent = data.title;
-            if (contentEl) contentEl.innerHTML = data.summary;
+            if (elements.title) elements.title.textContent = data.title;
+            if (elements.content) elements.content.innerHTML = data.summary;
             
             const sourceIcon = data.source === 'wikipedia' ? '📖' : '🤖';
             const sourceText = data.source === 'wikipedia' ? 'Wikipedia' : 'IA seule';
@@ -1138,35 +1153,46 @@ def index():
                 metaText += ` • ${data.method}`;
             }
             
-            if (metaEl) metaEl.textContent = metaText;
+            if (elements.meta) elements.meta.textContent = metaText;
             
-            if (data.url && urlEl && linkEl) {
-                linkEl.href = data.url;
-                linkEl.textContent = data.url;
-                urlEl.style.display = 'block';
-            } else if (urlEl) {
-                urlEl.style.display = 'none';
+            if (data.url && elements.url && elements.link) {
+                elements.link.href = data.url;
+                elements.link.textContent = data.url;
+                elements.url.style.display = 'block';
+            } else if (elements.url) {
+                elements.url.style.display = 'none';
             }
 
-            if (resultDiv) resultDiv.classList.add('active');
+            if (elements.result) {
+                elements.result.classList.add('active');
+            }
         }
 
         function hideResult() {
-            if (resultDiv) resultDiv.classList.remove('active');
+            const resultDiv = document.getElementById('result');
+            if (resultDiv) {
+                resultDiv.classList.remove('active');
+            }
         }
 
         function clearAll() {
-            if (themeInput) themeInput.value = '';
+            const themeInput = document.getElementById('theme');
+            if (themeInput) {
+                themeInput.value = '';
+                themeInput.focus();
+            }
             hideStatus();
             hideResult();
             isProcessing = false;
+            const generateBtn = document.getElementById('generateBtn');
             if (generateBtn) {
                 generateBtn.disabled = false;
-                generateBtn.textContent = 'Générer le résumé';
+                generateBtn.textContent = '✨ Générer le résumé';
             }
         }
 
         function showNotification(message, type = 'info') {
+            // Supprimer les notifications existantes
             document.querySelectorAll('.notification').forEach(n => n.remove());
             
             const notification = document.createElement('div');
@@ -1175,7 +1201,10 @@ def index():
             
             document.body.appendChild(notification);
             
+            // Animation d'apparition
             setTimeout(() => notification.classList.add('show'), 100);
+            
+            // Disparition automatique
             setTimeout(() => {
                 notification.classList.remove('show');
                 setTimeout(() => notification.remove(), 300);
@@ -1186,17 +1215,25 @@ def index():
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        function handleKeyDown(e) {
+        // Raccourcis clavier
+        document.addEventListener('keydown', function(e) {
             if (e.ctrlKey || e.metaKey) {
                 switch(e.key) {
                     case 'Enter':
                         e.preventDefault();
-                        if (!isProcessing && themeInput && themeInput.value.trim()) {
-                            handleFormSubmit(e);
+                        if (!isProcessing) {
+                            const themeInput = document.getElementById('theme');
+                            if (themeInput && themeInput.value.trim()) {
+                                const form = document.getElementById('summarizerForm');
+                                if (form) {
+                                    handleFormSubmit(e);
+                                }
+                            }
                         }
                         break;
                     case 'k':
                         e.preventDefault();
+                        const themeInput = document.getElementById('theme');
                         if (themeInput) {
                             themeInput.focus();
                             themeInput.select();
@@ -1208,12 +1245,10 @@ def index():
                         break;
                 }
             }
-        }
+        });
     </script>
 </body>
-</html>
-"""
-    return html_content
+</html>"""
 
 @app.route('/api/summarize', methods=['POST'])
 def summarize():
