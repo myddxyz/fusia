@@ -18,7 +18,7 @@ class WikipediaMistralSummarizer:
         """
         Initialise le résumeur avec rotation automatique des clés API
         """
-        # 🔑 Clés API Mistral avec rotation automatique
+        # Clés API Mistral avec rotation automatique
         self.api_keys = [
             "FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX",
             "9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF",
@@ -27,10 +27,10 @@ class WikipediaMistralSummarizer:
         self.mistral_client = None
         self.init_client()
         
-        # 💾 Cache des résumés (en mémoire)
+        # Cache des résumés (en mémoire)
         self.cache = {}
         
-        # 📊 Statistiques
+        # Statistiques
         self.stats = {
             'requests': 0,
             'cache_hits': 0,
@@ -38,7 +38,7 @@ class WikipediaMistralSummarizer:
             'mistral_only': 0
         }
         
-        # 🌍 Configuration Wikipedia
+        # Configuration Wikipedia
         wikipedia.set_lang("fr")
     
     def init_client(self):
@@ -46,9 +46,9 @@ class WikipediaMistralSummarizer:
         try:
             key = random.choice(self.api_keys)
             self.mistral_client = Mistral(api_key=key)
-            print(f"✅ Client Mistral initialisé")
+            print(f"Client Mistral initialisé")
         except Exception as e:
-            print(f"❌ Erreur initialisation client: {e}")
+            print(f"Erreur initialisation client: {e}")
     
     def retry_with_different_key(self, func, *args, **kwargs):
         """Retry une fonction avec différentes clés API en cas d'échec"""
@@ -57,7 +57,7 @@ class WikipediaMistralSummarizer:
                 self.mistral_client = Mistral(api_key=key)
                 return func(*args, **kwargs)
             except Exception as e:
-                print(f"⚠️ Échec avec une clé, tentative suivante...")
+                print(f"Échec avec une clé, tentative suivante...")
                 continue
         raise Exception("Toutes les clés API ont échoué")
     
@@ -69,12 +69,12 @@ class WikipediaMistralSummarizer:
         """
         Recherche intelligente sur Wikipedia avec plusieurs stratégies
         """
-        print(f"🔍 Recherche pour: '{theme}'")
+        print(f"Recherche pour: '{theme}'")
         
         # Stratégie 1: Recherche directe
         try:
             page = wikipedia.page(theme)
-            print(f"✅ Trouvé directement: {page.title}")
+            print(f"Trouvé directement: {page.title}")
             return {
                 'title': page.title,
                 'content': page.content,
@@ -84,7 +84,7 @@ class WikipediaMistralSummarizer:
         except wikipedia.exceptions.DisambiguationError as e:
             try:
                 page = wikipedia.page(e.options[0])
-                print(f"✅ Trouvé via désambiguïsation: {page.title}")
+                print(f"Trouvé via désambiguïsation: {page.title}")
                 return {
                     'title': page.title,
                     'content': page.content,
@@ -99,13 +99,13 @@ class WikipediaMistralSummarizer:
         # Stratégie 2: Recherche par suggestions
         try:
             suggestions = wikipedia.search(theme, results=5)
-            print(f"📋 Suggestions: {suggestions}")
+            print(f"Suggestions: {suggestions}")
             
             if suggestions:
                 for suggestion in suggestions[:2]:
                     try:
                         page = wikipedia.page(suggestion)
-                        print(f"✅ Trouvé via suggestion: {page.title}")
+                        print(f"Trouvé via suggestion: {page.title}")
                         return {
                             'title': page.title,
                             'content': page.content,
@@ -117,7 +117,7 @@ class WikipediaMistralSummarizer:
         except:
             pass
         
-        print(f"❌ Aucune page Wikipedia trouvée pour: '{theme}'")
+        print(f"Aucune page Wikipedia trouvée pour: '{theme}'")
         return None
     
     def markdown_to_html(self, text):
@@ -243,7 +243,7 @@ class WikipediaMistralSummarizer:
         
         if not wiki_data:
             # Réponse Mistral seul
-            print(f"📝 Génération directe avec Mistral pour: {theme}")
+            print(f"Génération directe avec Mistral pour: {theme}")
             mistral_response = self.answer_with_mistral_only(theme, length_mode)
             
             if not mistral_response:
@@ -266,7 +266,7 @@ class WikipediaMistralSummarizer:
             
         else:
             # Résumé Wikipedia + Mistral
-            print(f"📖 Résumé Wikipedia pour: {wiki_data['title']}")
+            print(f"Résumé Wikipedia pour: {wiki_data['title']}")
             summary = self.summarize_with_mistral(wiki_data['title'], wiki_data['content'], length_mode)
             
             if not summary:
@@ -298,7 +298,7 @@ summarizer = WikipediaMistralSummarizer()
 @app.route('/')
 def index():
     """Page d'accueil avec l'interface"""
-    return '''
+    html_content = """
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -845,7 +845,6 @@ def index():
                     <div class="suggestions">
                         <span style="color: var(--text-secondary); font-size: 0.9rem;">💡 Suggestions populaires:</span>
                         <div class="suggestion-chips" id="suggestionChips">
-                            <!-- Les suggestions seront ajoutées ici -->
                         </div>
                     </div>
                 </div>
@@ -898,10 +897,390 @@ def index():
     </div>
 
     <script>
-        // Variables globales
         let isProcessing = false;
         let currentLength = 'moyen';
         
-        // Suggestions populaires
         const popularThemes = [
-            "Intelligence artificielle", "Réchauffement climatique",
+            "Intelligence artificielle", "Réchauffement climatique", "Einstein",
+            "Révolution française", "Marie Curie", "Paris",
+            "Photosynthèse", "Bitcoin", "Système solaire"
+        ];
+
+        const form = document.getElementById('summarizerForm');
+        const themeInput = document.getElementById('theme');
+        const generateBtn = document.getElementById('generateBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const themeToggle = document.getElementById('themeToggle');
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        const progressFill = document.getElementById('progressFill');
+        const statusText = document.getElementById('statusText');
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Page chargée, initialisation...');
+            initializeSuggestions();
+            initializeLengthSelector();
+            initializeTheme();
+            loadStats();
+            bindEvents();
+        });
+
+        function bindEvents() {
+            if (form) {
+                form.addEventListener('submit', handleFormSubmit);
+            }
+            if (themeToggle) {
+                themeToggle.addEventListener('click', toggleTheme);
+            }
+            if (clearBtn) {
+                clearBtn.addEventListener('click', clearAll);
+            }
+            document.addEventListener('keydown', handleKeyDown);
+            if (themeInput) {
+                themeInput.focus();
+            }
+        }
+
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            console.log('Formulaire soumis');
+            
+            if (isProcessing) {
+                console.log('Traitement déjà en cours');
+                return;
+            }
+
+            const theme = themeInput.value.trim();
+            if (!theme) {
+                showNotification('Veuillez entrer un thème de recherche', 'error');
+                return;
+            }
+
+            console.log('Démarrage du traitement pour:', theme, 'longueur:', currentLength);
+            processTheme(theme, currentLength);
+        }
+
+        function initializeSuggestions() {
+            const container = document.getElementById('suggestionChips');
+            if (!container) return;
+            
+            const shuffled = popularThemes.sort(() => 0.5 - Math.random()).slice(0, 6);
+            
+            shuffled.forEach(theme => {
+                const chip = document.createElement('button');
+                chip.className = 'chip';
+                chip.textContent = theme;
+                chip.type = 'button';
+                chip.addEventListener('click', function() {
+                    themeInput.value = theme;
+                    themeInput.focus();
+                });
+                container.appendChild(chip);
+            });
+        }
+
+        function initializeLengthSelector() {
+            const lengthBtns = document.querySelectorAll('.length-btn');
+            
+            lengthBtns.forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    lengthBtns.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    currentLength = this.dataset.length;
+                    console.log('Longueur sélectionnée:', currentLength);
+                });
+            });
+        }
+
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            if (savedTheme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                document.getElementById('themeIcon').textContent = '☀️';
+            }
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            document.getElementById('themeIcon').textContent = newTheme === 'dark' ? '☀️' : '🌙';
+            localStorage.setItem('theme', newTheme);
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                if (response.ok) {
+                    const stats = await response.json();
+                    updateStatsDisplay(stats);
+                }
+            } catch (error) {
+                console.log('Erreur chargement stats:', error);
+            }
+        }
+
+        function updateStatsDisplay(stats) {
+            const totalEl = document.getElementById('totalRequests');
+            const cacheEl = document.getElementById('cacheHits');
+            const wikiEl = document.getElementById('wikiSuccess');
+            const aiEl = document.getElementById('aiOnly');
+
+            if (totalEl) totalEl.textContent = stats.requests || 0;
+            if (cacheEl) cacheEl.textContent = stats.cache_hits || 0;
+            if (wikiEl) wikiEl.textContent = stats.wikipedia_success || 0;
+            if (aiEl) aiEl.textContent = stats.mistral_only || 0;
+        }
+
+        async function processTheme(theme, lengthMode) {
+            console.log('processTheme appelé avec:', theme, lengthMode);
+            
+            isProcessing = true;
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Traitement...';
+            
+            showStatus('Recherche en cours...');
+            hideResult();
+
+            try {
+                updateProgress(25);
+                await sleep(300);
+                
+                statusText.textContent = 'Analyse du contenu...';
+                updateProgress(50);
+                await sleep(300);
+
+                console.log('Envoi de la requête à l\'API');
+                
+                const response = await fetch('/api/summarize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        theme: theme,
+                        length_mode: lengthMode
+                    })
+                });
+
+                console.log('Réponse reçue:', response.status);
+
+                statusText.textContent = 'Génération du résumé...';
+                updateProgress(75);
+                await sleep(300);
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Erreur lors du traitement');
+                }
+
+                const data = await response.json();
+                console.log('Données reçues:', data);
+
+                statusText.textContent = 'Résumé terminé!';
+                updateProgress(100);
+                await sleep(500);
+
+                showResult(data);
+                hideStatus();
+                await loadStats();
+                showNotification('Résumé généré avec succès!', 'success');
+
+            } catch (error) {
+                console.error('Erreur complète:', error);
+                showNotification(error.message, 'error');
+                hideStatus();
+            } finally {
+                isProcessing = false;
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Générer le résumé';
+            }
+        }
+
+        function updateProgress(percent) {
+            if (progressFill) {
+                progressFill.style.width = percent + '%';
+            }
+        }
+
+        function showStatus(message) {
+            if (statusText) statusText.textContent = message;
+            if (statusDiv) statusDiv.classList.add('active');
+            updateProgress(0);
+        }
+
+        function hideStatus() {
+            if (statusDiv) statusDiv.classList.remove('active');
+            setTimeout(() => {
+                updateProgress(0);
+            }, 300);
+        }
+
+        function showResult(data) {
+            console.log('Affichage du résultat:', data);
+            
+            const titleEl = document.getElementById('resultTitle');
+            const contentEl = document.getElementById('resultContent');
+            const metaEl = document.getElementById('resultMeta');
+            const urlEl = document.getElementById('resultUrl');
+            const linkEl = document.getElementById('wikiLink');
+            
+            if (titleEl) titleEl.textContent = data.title;
+            if (contentEl) contentEl.innerHTML = data.summary;
+            
+            const sourceIcon = data.source === 'wikipedia' ? '📖' : '🤖';
+            const sourceText = data.source === 'wikipedia' ? 'Wikipedia' : 'IA seule';
+            let metaText = `${sourceIcon} ${sourceText} • ${data.processing_time}s • ${data.length_mode}`;
+            
+            if (data.method) {
+                metaText += ` • ${data.method}`;
+            }
+            
+            if (metaEl) metaEl.textContent = metaText;
+            
+            if (data.url && urlEl && linkEl) {
+                linkEl.href = data.url;
+                linkEl.textContent = data.url;
+                urlEl.style.display = 'block';
+            } else if (urlEl) {
+                urlEl.style.display = 'none';
+            }
+
+            if (resultDiv) resultDiv.classList.add('active');
+        }
+
+        function hideResult() {
+            if (resultDiv) resultDiv.classList.remove('active');
+        }
+
+        function clearAll() {
+            if (themeInput) themeInput.value = '';
+            hideStatus();
+            hideResult();
+            isProcessing = false;
+            if (generateBtn) {
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Générer le résumé';
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            document.querySelectorAll('.notification').forEach(n => n.remove());
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => notification.classList.add('show'), 100);
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function handleKeyDown(e) {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case 'Enter':
+                        e.preventDefault();
+                        if (!isProcessing && themeInput && themeInput.value.trim()) {
+                            handleFormSubmit(e);
+                        }
+                        break;
+                    case 'k':
+                        e.preventDefault();
+                        if (themeInput) {
+                            themeInput.focus();
+                            themeInput.select();
+                        }
+                        break;
+                    case 'd':
+                        e.preventDefault();
+                        toggleTheme();
+                        break;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+    return html_content
+
+@app.route('/api/summarize', methods=['POST'])
+def summarize():
+    """API endpoint pour traiter les résumés"""
+    try:
+        print("Requête reçue sur /api/summarize")
+        
+        data = request.get_json()
+        print(f"Données reçues: {data}")
+        
+        theme = data.get('theme')
+        length_mode = data.get('length_mode', 'moyen')
+        
+        if not theme:
+            print("Thème manquant")
+            return jsonify({'error': 'Thème requis'}), 400
+        
+        print(f"Traitement: '{theme}' en mode '{length_mode}'")
+        
+        result = summarizer.process_theme(theme, length_mode)
+        
+        if not result['success']:
+            print(f"Échec: {result['error']}")
+            return jsonify({'error': result['error']}), 500
+        
+        print(f"Succès: {result['title']}")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Erreur dans l'endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/stats')
+def get_stats():
+    """API endpoint pour récupérer les statistiques"""
+    return jsonify(summarizer.stats)
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("Wikipedia Summarizer Pro - Version Corrigée et Fonctionnelle")
+    print("=" * 60)
+    print("Interface: http://localhost:4000")
+    print("API: http://localhost:4000/api/summarize")
+    print("Stats: http://localhost:4000/api/stats")
+    print("-" * 60)
+    print("Fonctionnalités:")
+    print("   • 3 clés API Mistral avec rotation automatique")
+    print("   • Recherche Wikipedia intelligente (direct + suggestions)")
+    print("   • Cache des résumés en mémoire")
+    print("   • 3 longueurs de résumé (court/moyen/long)")
+    print("   • Mode sombre/clair")
+    print("   • Statistiques en temps réel")
+    print("   • Raccourcis: Ctrl+Enter, Ctrl+K, Ctrl+D")
+    print("   • Interface responsive")
+    print("-" * 60)
+    
+    try:
+        from mistralai import Mistral
+        import wikipedia
+        print("Toutes les dépendances sont installées")
+        print("3 clés API Mistral configurées")
+        print("Recherche Wikipedia intelligente activée")
+    except ImportError as e:
+        print(f"Module manquant: {e}")
+        print("Installez avec: pip install flask mistralai wikipedia")
+        exit(1)
+    
+    print("=" * 60)
+    
+    app.run(debug=True, host='0.0.0.0', port=4000)
