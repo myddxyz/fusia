@@ -448,14 +448,59 @@ def index():
             display: flex; justify-content: space-between; align-items: center;
         }
         
+        .language-dropdown {
+            position: relative; display: inline-block;
+        }
+        
         .language-selector {
             background: var(--bg-primary); border: none; border-radius: 15px;
             padding: 10px 15px; cursor: pointer; font-size: 0.9rem;
             color: var(--text-primary); transition: all 0.2s ease;
             box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+            display: flex; align-items: center; gap: 8px; min-width: 120px;
         }
         
         .language-selector:hover { transform: translateY(-2px); }
+        
+        .language-dropdown.active .language-selector {
+            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark);
+        }
+        
+        .language-options {
+            position: absolute; top: 100%; left: 0; right: 0; z-index: 1000;
+            background: var(--bg-primary); border-radius: 15px; margin-top: 5px;
+            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
+            overflow: hidden; opacity: 0; visibility: hidden; transform: translateY(-10px);
+            transition: all 0.3s ease;
+        }
+        
+        .language-options.show {
+            opacity: 1; visibility: visible; transform: translateY(0);
+        }
+        
+        .language-option {
+            background: none; border: none; width: 100%; text-align: left;
+            padding: 12px 15px; font-size: 0.9rem; color: var(--text-primary);
+            cursor: pointer; transition: all 0.2s ease;
+            display: flex; align-items: center; gap: 8px;
+        }
+        
+        .language-option:hover {
+            background: var(--bg-secondary); transform: translateX(5px);
+        }
+        
+        .language-option.active {
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            color: white;
+        }
+        
+        .dropdown-arrow {
+            font-size: 0.7rem; transition: transform 0.3s ease;
+        }
+        
+        .language-dropdown.active .dropdown-arrow {
+            transform: rotate(180deg);
+        }
         
         .right-controls { display: flex; align-items: center; gap: 15px; }
         
@@ -762,11 +807,23 @@ def index():
     <div class="container">
         <div class="header">
             <div class="header-controls">
-                <select class="language-selector" id="languageSelector" onchange="changeLanguage()">
-                    <option value="en">🇺🇸 English</option>
-                    <option value="fr">🇫🇷 Français</option>
-                    <option value="es">🇪🇸 Español</option>
-                </select>
+                <div class="language-dropdown" id="languageDropdown">
+                    <button class="language-selector" id="languageSelector" onclick="toggleLanguageDropdown()">
+                        <span id="currentLanguage">🇺🇸 English</span>
+                        <span class="dropdown-arrow">▼</span>
+                    </button>
+                    <div class="language-options" id="languageOptions">
+                        <button class="language-option active" onclick="selectLanguage('en', '🇺🇸 English', this)">
+                            🇺🇸 English
+                        </button>
+                        <button class="language-option" onclick="selectLanguage('fr', '🇫🇷 Français', this)">
+                            🇫🇷 Français
+                        </button>
+                        <button class="language-option" onclick="selectLanguage('es', '🇪🇸 Español', this)">
+                            🇪🇸 Español
+                        </button>
+                    </div>
+                </div>
                 
                 <div class="right-controls">
                     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
@@ -1070,65 +1127,6 @@ def index():
 
         function loadTheme() {
             const savedTheme = localStorage.getItem('theme') || 'light';
-            currentTheme = savedTheme;
-            document.documentElement.setAttribute('data-theme', savedTheme);
-            updateThemeToggle();
-        }
-
-        function loadLanguage() {
-            const savedLanguage = localStorage.getItem('language') || 'en';
-            currentLanguage = savedLanguage;
-            document.getElementById('languageSelector').value = savedLanguage;
-            updateTranslations();
-        }
-
-        function toggleTheme() {
-            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
-            document.documentElement.setAttribute('data-theme', currentTheme);
-            localStorage.setItem('theme', currentTheme);
-            updateThemeToggle();
-        }
-
-        function updateThemeToggle() {
-            const toggle = document.getElementById('themeToggle');
-            if (toggle) {
-                toggle.textContent = currentTheme === 'light' ? '🌙' : '☀️';
-            }
-        }
-
-        function changeLanguage() {
-            const selector = document.getElementById('languageSelector');
-            currentLanguage = selector.value;
-            localStorage.setItem('language', currentLanguage);
-            updateTranslations();
-            initializeSuggestions();
-        }
-
-        function updateTranslations() {
-            const elements = document.querySelectorAll('[data-text-key]');
-            elements.forEach(element => {
-                const key = element.getAttribute('data-text-key');
-                if (translations[currentLanguage] && translations[currentLanguage][key]) {
-                    element.textContent = translations[currentLanguage][key];
-                }
-            });
-
-            // Update placeholder
-            const themeInput = document.getElementById('theme');
-            if (themeInput && translations[currentLanguage].search_placeholder) {
-                themeInput.placeholder = translations[currentLanguage].search_placeholder;
-            }
-        }
-
-        function selectLength(length, element) {
-            document.querySelectorAll('.length-btn').forEach(btn => btn.classList.remove('active'));
-            element.classList.add('active');
-            currentLength = length;
-        }
-
-        function selectMode(mode, element) {
-            document.querySelectorAll('.mode-chip').forEach(btn => btn.classList.remove('active'));
-            element.classList.add('active');
             currentMode = mode;
         }
 
@@ -1447,7 +1445,7 @@ def index():
 
         // Close language dropdown when clicking outside
         document.addEventListener('click', function(e) {
-            const dropdown = document.querySelector('.language-dropdown');
+            const dropdown = document.getElementById('languageDropdown');
             const options = document.getElementById('languageOptions');
             
             if (dropdown && options && !dropdown.contains(e.target)) {
@@ -1541,4 +1539,112 @@ if __name__ == '__main__':
         host='0.0.0.0', 
         port=port, 
         debug=debug_mode
-    )
+    )Theme = savedTheme;
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeToggle();
+        }
+
+        function loadLanguage() {
+            const savedLanguage = localStorage.getItem('language') || 'en';
+            currentLanguage = savedLanguage;
+            updateLanguageDisplay();
+            updateTranslations();
+        }
+
+        function updateLanguageDisplay() {
+            const languageNames = {
+                'en': '🇺🇸 English',
+                'fr': '🇫🇷 Français',
+                'es': '🇪🇸 Español'
+            };
+            
+            const currentLanguageEl = document.getElementById('currentLanguage');
+            if (currentLanguageEl) {
+                currentLanguageEl.textContent = languageNames[currentLanguage];
+            }
+            
+            // Update active option
+            document.querySelectorAll('.language-option').forEach(option => {
+                option.classList.remove('active');
+            });
+            
+            const activeOption = document.querySelector(`[onclick*="'${currentLanguage}'"]`);
+            if (activeOption) {
+                activeOption.classList.add('active');
+            }
+        }
+
+        function toggleLanguageDropdown() {
+            const dropdown = document.getElementById('languageDropdown');
+            const options = document.getElementById('languageOptions');
+            
+            if (dropdown && options) {
+                const isActive = dropdown.classList.contains('active');
+                
+                if (isActive) {
+                    dropdown.classList.remove('active');
+                    options.classList.remove('show');
+                } else {
+                    dropdown.classList.add('active');
+                    options.classList.add('show');
+                }
+            }
+        }
+
+        function selectLanguage(langCode, langName, element) {
+            currentLanguage = langCode;
+            localStorage.setItem('language', currentLanguage);
+            
+            // Close dropdown
+            const dropdown = document.getElementById('languageDropdown');
+            const options = document.getElementById('languageOptions');
+            if (dropdown && options) {
+                dropdown.classList.remove('active');
+                options.classList.remove('show');
+            }
+            
+            updateLanguageDisplay();
+            updateTranslations();
+            initializeSuggestions();
+        }
+
+        function toggleTheme() {
+            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', currentTheme);
+            localStorage.setItem('theme', currentTheme);
+            updateThemeToggle();
+        }
+
+        function updateThemeToggle() {
+            const toggle = document.getElementById('themeToggle');
+            if (toggle) {
+                toggle.textContent = currentTheme === 'light' ? '🌙' : '☀️';
+            }
+        }
+
+        function updateTranslations() {
+            const elements = document.querySelectorAll('[data-text-key]');
+            elements.forEach(element => {
+                const key = element.getAttribute('data-text-key');
+                if (translations[currentLanguage] && translations[currentLanguage][key]) {
+                    element.textContent = translations[currentLanguage][key];
+                }
+            });
+
+            // Update placeholder
+            const themeInput = document.getElementById('theme');
+            if (themeInput && translations[currentLanguage].search_placeholder) {
+                themeInput.placeholder = translations[currentLanguage].search_placeholder;
+            }
+        }
+
+        function selectLength(length, element) {
+            document.querySelectorAll('.length-btn').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            currentLength = length;
+        }
+
+        function selectMode(mode, element) {
+            document.querySelectorAll('.mode-chip').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            current
