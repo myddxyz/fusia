@@ -384,7 +384,7 @@ def index():
         }
         
         .container::before {
-            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+            content: ''; position: absolute; top: 0; left: 15px; right: 15px; height: 2px;
             background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
             border-radius: 30px 30px 0 0;
         }
