@@ -1,15 +1,11 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify
 import requests
 import json
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+from mistralai import Mistral
 import wikipedia
 import os
 import re
-import random
 import time
-from datetime import datetime
-import difflib
 import hashlib
 
 app = Flask(__name__)
@@ -51,7 +47,7 @@ class WikipediaMistralSummarizer:
         """Obtient un client Mistral avec rotation des clés"""
         key = self.api_keys[self.current_key_index % len(self.api_keys)]
         self.current_key_index += 1
-        return MistralClient(api_key=key)
+        return Mistral(api_key=key)
     
     def retry_with_different_keys(self, func, *args, **kwargs):
         """Retry une fonction avec toutes les clés API disponibles"""
@@ -186,13 +182,14 @@ Consigne: Crée un résumé clair, informatif et bien structuré de cette page W
 
 Résumé:"""
             
-            messages = [ChatMessage(role="user", content=prompt)]
+            # Format correct pour Mistral AI v1.0.0
+            messages = [{"role": "user", "content": prompt}]
             
-            response = client.chat(
+            response = client.chat.complete(
                 model="mistral-large-latest",
                 messages=messages,
                 temperature=0.2,
-                max_tokens=600  # Réduit pour Render
+                max_tokens=600
             )
             
             return response.choices[0].message.content.strip()
@@ -220,9 +217,9 @@ Consigne: Fournis une explication complète et informative sur ce sujet en fran�
 
 Réponse:"""
             
-            messages = [ChatMessage(role="user", content=prompt)]
+            messages = [{"role": "user", "content": prompt}]
             
-            response = client.chat(
+            response = client.chat.complete(
                 model="mistral-large-latest", 
                 messages=messages,
                 temperature=0.3,
@@ -573,10 +570,7 @@ def index():
 <body>
     <div class="container">
         <div class="header">
-            <button class="theme-toggle" onclick="toggleTheme()" title="Changer de thème">
-                <span id="themeIcon">🌙</span>
-            </button>
-            <h1 class="title">🌟 Wikipedia Summarizer Pro</h1>
+            <h1 class="title">Wikipedia Summarizer Pro</h1>
             <p class="subtitle">Résumés intelligents avec Mistral AI</p>
         </div>
 
@@ -658,47 +652,16 @@ def index():
         ];
 
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 Page chargée - Version Render Fixed');
             initializeSuggestions();
-            initializeTheme();
             loadStats();
-            
             const themeInput = document.getElementById('theme');
             if (themeInput) themeInput.focus();
-            
-            // Test de connexion API spécifique à Render
-            testConnection();
         });
-
-        function testConnection() {
-            console.log('🧪 Test de connexion API Render...');
-            fetch('/api/stats')
-                .then(response => {
-                    console.log('API Response status:', response.status);
-                    if (response.ok) {
-                        console.log('✅ API Render accessible');
-                        showNotification('Connexion OK', 'success');
-                    } else {
-                        console.log('⚠️ API erreur:', response.status);
-                        showNotification('Problème API', 'error');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('Stats data:', data);
-                })
-                .catch(error => {
-                    console.error('❌ Erreur connexion API:', error);
-                    showNotification('Problème de connexion', 'error');
-                });
-        }
 
         function handleFormSubmit(event) {
             event.preventDefault();
-            console.log('📝 Formulaire soumis - Render');
             
             if (isProcessing) {
-                console.log('⏳ Traitement en cours');
                 showNotification('Un traitement est déjà en cours...', 'info');
                 return false;
             }
@@ -707,13 +670,11 @@ def index():
             const theme = themeInput ? themeInput.value.trim() : '';
             
             if (!theme || theme.length < 2) {
-                console.log('❌ Thème invalide');
                 showNotification('Veuillez entrer un thème valide (minimum 2 caractères)', 'error');
                 if (themeInput) themeInput.focus();
                 return false;
             }
 
-            console.log(`🚀 Démarrage traitement: "${theme}" (${currentLength})`);
             processTheme(theme, currentLength);
             return false;
         }
@@ -722,7 +683,6 @@ def index():
             document.querySelectorAll('.length-btn').forEach(btn => btn.classList.remove('active'));
             element.classList.add('active');
             currentLength = length;
-            console.log(`📏 Longueur: ${currentLength}`);
         }
 
         function initializeSuggestions() {
@@ -745,27 +705,6 @@ def index():
                 };
                 container.appendChild(chip);
             });
-        }
-
-        function initializeTheme() {
-            const savedTheme = localStorage.getItem('theme') || 'light';
-            if (savedTheme === 'dark') {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                const themeIcon = document.getElementById('themeIcon');
-                if (themeIcon) themeIcon.textContent = '☀️';
-            }
-        }
-
-        function toggleTheme() {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            
-            document.documentElement.setAttribute('data-theme', newTheme);
-            const themeIcon = document.getElementById('themeIcon');
-            if (themeIcon) {
-                themeIcon.textContent = newTheme === 'dark' ? '☀️' : '🌙';
-            }
-            localStorage.setItem('theme', newTheme);
         }
 
         async function loadStats() {
@@ -795,8 +734,6 @@ def index():
         }
 
         async function processTheme(theme, lengthMode) {
-            console.log(`🚀 DÉBUT processTheme Render: "${theme}"`);
-            
             isProcessing = true;
             const generateBtn = document.getElementById('generateBtn');
             
@@ -814,8 +751,6 @@ def index():
                     length_mode: lengthMode
                 };
                 
-                console.log('📡 Envoi requête:', requestData);
-                
                 updateProgress(20);
                 updateStatus('🔍 Recherche Wikipedia...');
                 
@@ -827,8 +762,6 @@ def index():
                     },
                     body: JSON.stringify(requestData)
                 });
-
-                console.log(`📡 Réponse: ${response.status} ${response.statusText}`);
 
                 updateProgress(60);
                 updateStatus('🤖 Génération...');
@@ -846,7 +779,6 @@ def index():
                 }
 
                 const data = await response.json();
-                console.log('✅ Données reçues:', data);
 
                 if (!data.success) {
                     throw new Error(data.error || 'Erreur inconnue');
@@ -863,7 +795,7 @@ def index():
                 showNotification('Résumé généré!', 'success');
 
             } catch (error) {
-                console.error('❌ ERREUR:', error);
+                console.error('Erreur:', error);
                 showNotification(error.message || 'Erreur traitement', 'error');
                 hideStatus();
             } finally {
@@ -899,8 +831,6 @@ def index():
         }
 
         function showResult(data) {
-            console.log('👁️ Affichage résultat:', data.title);
-            
             const elements = {
                 title: document.getElementById('resultTitle'),
                 content: document.getElementById('resultContent'),
@@ -973,32 +903,6 @@ def index():
 
         // Raccourcis clavier
         document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey || e.metaKey) {
-                switch(e.key) {
-                    case 'Enter':
-                        e.preventDefault();
-                        if (!isProcessing) {
-                            const themeInput = document.getElementById('theme');
-                            if (themeInput && themeInput.value.trim()) {
-                                handleFormSubmit(e);
-                            }
-                        }
-                        break;
-                    case 'k':
-                        e.preventDefault();
-                        const themeInput = document.getElementById('theme');
-                        if (themeInput) {
-                            themeInput.focus();
-                            themeInput.select();
-                        }
-                        break;
-                    case 'd':
-                        e.preventDefault();
-                        toggleTheme();
-                        break;
-                }
-            }
-            
             if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
                 const target = e.target;
                 if (target && target.id === 'theme' && !isProcessing && target.value.trim()) {
@@ -1013,16 +917,14 @@ def index():
 
 @app.route('/api/summarize', methods=['POST'])
 def summarize():
-    """API endpoint pour traiter les résumés - Version Render"""
+    """API endpoint pour traiter les résumés"""
     try:
-        print("🚀 REQUÊTE /api/summarize - Version Render Fixed")
+        print("🚀 REQUÊTE /api/summarize")
         
         if not request.is_json:
-            print("❌ Pas de JSON")
             return jsonify({'success': False, 'error': 'Content-Type doit être application/json'}), 400
         
         data = request.get_json()
-        print(f"📨 Data: {data}")
         
         if not data:
             return jsonify({'success': False, 'error': 'Données JSON requises'}), 400
@@ -1052,28 +954,25 @@ def summarize():
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """API endpoint pour les statistiques - Version Render"""
+    """API endpoint pour les statistiques"""
     try:
         return jsonify(summarizer.stats), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Health check endpoint pour Render
 @app.route('/health')
 def health_check():
     """Health check endpoint pour Render"""
     return jsonify({'status': 'OK', 'service': 'Wikipedia Summarizer Pro'}), 200
 
-# Point d'entrée pour Render
 if __name__ == '__main__':
-    print("🌐 WIKIPEDIA SUMMARIZER PRO - VERSION RENDER FIXED")
+    print("🌐 WIKIPEDIA SUMMARIZER PRO - VERSION FINALE")
     print("="*60)
     
     try:
-        from mistralai.client import MistralClient
-        from mistralai.models.chat_completion import ChatMessage
+        from mistralai import Mistral
         import wikipedia
-        print("✅ Dépendances OK - Imports Mistral mis à jour")
+        print("✅ Dépendances OK")
         
         # Configuration pour Render
         port = int(os.environ.get('PORT', 4000))
@@ -1083,19 +982,13 @@ if __name__ == '__main__':
         print(f"🔧 Debug: {debug_mode}")
         print(f"🔑 Clés API configurées: {len(summarizer.api_keys)}")
         
-        # Test rapide des clés
-        test_client = MistralClient(api_key=summarizer.api_keys[0])
-        print("✅ Client Mistral testé avec nouvelle API")
-        
     except ImportError as e:
-        print(f"❌ ERREUR IMPORT: {e}")
-        print("Installez: pip install flask mistralai wikipedia requests")
+        print(f"❌ ERREUR: {e}")
         exit(1)
     except Exception as e:
         print(f"⚠️ Avertissement: {e}")
     
     print("🚀 DÉMARRAGE...")
-    print("="*60)
     
     # Démarrage adapté pour Render
     app.run(
