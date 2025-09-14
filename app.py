@@ -1,574 +1,4 @@
-from flask import Flask, request, jsonify
-import requests
-import json
-from mistralai import Mistral
-import wikipedia
-import os
-import re
-import time
-import hashlib
-
-app = Flask(__name__)
-
-class WikipediaMistralSummarizer:
-    def __init__(self):
-        """
-        Initialise le résumeur avec clés API depuis variables d'environnement
-        """
-        # Clés API Mistral depuis variables d'environnement OU valeurs par défaut
-        self.api_keys = [
-            os.environ.get('MISTRAL_KEY_1', 'FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX'),
-            os.environ.get('MISTRAL_KEY_2', '9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF'),
-            os.environ.get('MISTRAL_KEY_3', 'cvkQHVcomFFEW47G044x2p4DTyk5BIc7')
-        ]
-        
-        self.current_key_index = 0
-        
-        # Cache des résumés (en mémoire)
-        self.cache = {}
-        
-        # Statistiques
-        self.stats = {
-            'requests': 0,
-            'cache_hits': 0,
-            'wikipedia_success': 0,
-            'mistral_only': 0
-        }
-        
-        # Configuration Wikipedia par défaut
-        self.current_language = 'en'
-        self.setup_wikipedia_language('en')
-    
-    def setup_wikipedia_language(self, lang_code):
-        """Configure Wikipedia pour une langue donnée"""
-        try:
-            wikipedia.set_lang(lang_code)
-            wikipedia.set_rate_limiting(True)
-            self.current_language = lang_code
-            print(f"✅ Wikipedia configuré pour: {lang_code}")
-        except Exception as e:
-            print(f"⚠️ Erreur config Wikipedia ({lang_code}): {e}")
-            # Fallback vers l'anglais
-            try:
-                wikipedia.set_lang('en')
-                self.current_language = 'en'
-            except:
-                pass
-    
-    def get_mistral_client(self):
-        """Obtient un client Mistral avec rotation des clés"""
-        key = self.api_keys[self.current_key_index % len(self.api_keys)]
-        self.current_key_index += 1
-        return Mistral(api_key=key)
-    
-    def retry_with_different_keys(self, func, *args, **kwargs):
-        """Retry une fonction avec toutes les clés API disponibles"""
-        last_exception = None
-        
-        for attempt in range(len(self.api_keys)):
-            try:
-                print(f"Tentative {attempt + 1} avec clé API")
-                result = func(*args, **kwargs)
-                return result
-            except Exception as e:
-                print(f"Erreur avec clé {attempt + 1}: {str(e)}")
-                last_exception = e
-                self.current_key_index += 1
-                continue
-        
-        raise Exception(f"Toutes les clés API ont échoué. Dernière erreur: {str(last_exception)}")
-    
-    def get_cache_key(self, theme, length_mode, language):
-        """Génère une clé de cache unique incluant la langue"""
-        return hashlib.md5(f"{theme.lower().strip()}_{length_mode}_{language}".encode()).hexdigest()
-    
-    def smart_wikipedia_search(self, theme):
-        """Recherche intelligente sur Wikipedia"""
-        print(f"🔍 Recherche Wikipedia pour: '{theme}' (langue: {self.current_language})")
-        
-        theme_clean = theme.strip()
-        
-        try:
-            print("Tentative de recherche directe...")
-            page = wikipedia.page(theme_clean, auto_suggest=False)
-            print(f"✅ Trouvé directement: {page.title}")
-            return {
-                'title': page.title,
-                'content': page.content[:8000],  # Limiter pour Render
-                'url': page.url,
-                'method': 'direct'
-            }
-        except wikipedia.exceptions.DisambiguationError as e:
-            try:
-                page = wikipedia.page(e.options[0])
-                print(f"✅ Trouvé via désambiguïsation: {page.title}")
-                return {
-                    'title': page.title,
-                    'content': page.content[:8000],
-                    'url': page.url,
-                    'method': 'disambiguation'
-                }
-            except:
-                pass
-        except:
-            pass
-        
-        try:
-            print("Recherche avec suggestions...")
-            suggestions = wikipedia.search(theme_clean, results=3)
-            print(f"Suggestions trouvées: {suggestions}")
-            
-            if suggestions:
-                for suggestion in suggestions:
-                    try:
-                        page = wikipedia.page(suggestion)
-                        print(f"✅ Trouvé via suggestion: {page.title}")
-                        return {
-                            'title': page.title,
-                            'content': page.content[:8000],
-                            'url': page.url,
-                            'method': f'suggestion ({suggestion})'
-                        }
-                    except:
-                        continue
-        except:
-            pass
-        
-        print(f"❌ Aucune page Wikipedia trouvée pour: '{theme}'")
-        return None
-    
-    def markdown_to_html(self, text):
-        """Convertit le Markdown simple en HTML"""
-        if not text:
-            return ""
-        
-        text = text.strip()
-        text = re.sub(r'\*\*([^*]+?)\*\*', r'<strong>\1</strong>', text)
-        text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
-        
-        paragraphs = text.split('\n\n')
-        formatted_paragraphs = []
-        
-        for para in paragraphs:
-            para = para.strip()
-            if para and not para.startswith('<'):
-                para = f'<p>{para}</p>'
-            if para:
-                formatted_paragraphs.append(para)
-        
-        return '\n'.join(formatted_paragraphs)
-    
-    def get_word_count_for_length(self, length_mode):
-        """Retourne le nombre de mots selon la longueur"""
-        configs = {
-            'court': '150-200 mots',
-            'moyen': '250-350 mots', 
-            'long': '400-500 mots'
-        }
-        return configs.get(length_mode, configs['moyen'])
-    
-    def get_language_instruction(self, language):
-        """Retourne l'instruction de langue pour Mistral"""
-        language_instructions = {
-            'en': 'Write the summary in English.',
-            'fr': 'Écris le résumé en français.',
-            'es': 'Escribe el resumen en español.'
-        }
-        return language_instructions.get(language, language_instructions['en'])
-    
-    def summarize_with_mistral(self, title, content, length_mode='moyen', language='en'):
-        """Utilise Mistral AI pour résumer le contenu Wikipedia"""
-        def _summarize():
-            client = self.get_mistral_client()
-            
-            max_chars = 6000  # Réduit pour Render
-            if len(content) > max_chars:
-                content_truncated = content[:max_chars] + "..."
-            else:
-                content_truncated = content
-            
-            word_count = self.get_word_count_for_length(length_mode)
-            language_instruction = self.get_language_instruction(language)
-            
-            prompt = f"""You are an expert summarizer. Here is the content of a Wikipedia page about "{title}".
-
-Wikipedia Content:
-{content_truncated}
-
-Instructions: Create a clear, informative and well-structured summary of this Wikipedia page.
-- The summary should be approximately {word_count}
-- Use accessible and precise language
-- Structure the text in coherent paragraphs
-- Focus on the most important information
-- Write in plain text, without markdown formatting
-- {language_instruction}
-
-Summary:"""
-            
-            # Format correct pour Mistral AI v1.0.0
-            messages = [{"role": "user", "content": prompt}]
-            
-            response = client.chat.complete(
-                model="mistral-large-latest",
-                messages=messages,
-                temperature=0.2,
-                max_tokens=600
-            )
-            
-            return response.choices[0].message.content.strip()
-        
-        return self.retry_with_different_keys(_summarize)
-    
-    def answer_with_mistral_only(self, theme, length_mode='moyen', language='en'):
-        """Utilise Mistral AI pour répondre directement sur un thème sans Wikipedia"""
-        def _answer():
-            client = self.get_mistral_client()
-            
-            word_count = self.get_word_count_for_length(length_mode)
-            language_instruction = self.get_language_instruction(language)
-            
-            prompt = f"""You are an expert assistant who must provide complete information on a subject.
-
-Requested topic: "{theme}"
-
-Instructions: Provide a complete and informative explanation of this topic.
-- Explain what it is, its context, its importance
-- Give useful and interesting details
-- The text should be approximately {word_count}
-- Use clear and accessible language
-- Structure in coherent paragraphs
-- Write in plain text, without markdown formatting
-- {language_instruction}
-
-Response:"""
-            
-            messages = [{"role": "user", "content": prompt}]
-            
-            response = client.chat.complete(
-                model="mistral-large-latest", 
-                messages=messages,
-                temperature=0.3,
-                max_tokens=600
-            )
-            
-            return response.choices[0].message.content.strip()
-        
-        return self.retry_with_different_keys(_answer)
-
-    def process_theme(self, theme, length_mode='moyen', language='en'):
-        """Traite un thème complet avec support multilingue"""
-        print(f"\n🚀 DÉBUT DU TRAITEMENT: '{theme}' (longueur: {length_mode}, langue: {language})")
-        self.stats['requests'] += 1
-        start_time = time.time()
-        
-        if not theme or len(theme.strip()) < 2:
-            return {
-                'success': False,
-                'error': 'Le thème doit contenir au moins 2 caractères'
-            }
-        
-        theme = theme.strip()
-        
-        # Configurer Wikipedia pour la langue demandée
-        lang_code = {'en': 'en', 'fr': 'fr', 'es': 'es'}.get(language, 'en')
-        self.setup_wikipedia_language(lang_code)
-        
-        # Vérifier le cache
-        cache_key = self.get_cache_key(theme, length_mode, language)
-        if cache_key in self.cache:
-            print("💾 Résultat trouvé en cache")
-            self.stats['cache_hits'] += 1
-            return self.cache[cache_key]
-        
-        try:
-            wiki_data = self.smart_wikipedia_search(theme)
-            
-            if not wiki_data:
-                print(f"🤖 Génération directe avec Mistral pour: {theme}")
-                mistral_response = self.answer_with_mistral_only(theme, length_mode, language)
-                
-                if not mistral_response:
-                    return {'success': False, 'error': 'Erreur lors de la génération de la réponse'}
-                
-                formatted_response = self.markdown_to_html(mistral_response)
-                
-                result = {
-                    'success': True,
-                    'title': f"Informations sur: {theme}",
-                    'summary': formatted_response,
-                    'url': None,
-                    'source': 'mistral_only',
-                    'method': 'direct_ai',
-                    'processing_time': round(time.time() - start_time, 2),
-                    'length_mode': length_mode,
-                    'language': language
-                }
-                
-                self.stats['mistral_only'] += 1
-                
-            else:
-                print(f"📖 Résumé Wikipedia pour: {wiki_data['title']}")
-                summary = self.summarize_with_mistral(wiki_data['title'], wiki_data['content'], length_mode, language)
-                
-                if not summary:
-                    return {'success': False, 'error': 'Erreur lors de la génération du résumé'}
-                
-                formatted_summary = self.markdown_to_html(summary)
-                
-                result = {
-                    'success': True,
-                    'title': wiki_data['title'],
-                    'summary': formatted_summary,
-                    'url': wiki_data['url'],
-                    'source': 'wikipedia',
-                    'method': wiki_data['method'],
-                    'processing_time': round(time.time() - start_time, 2),
-                    'length_mode': length_mode,
-                    'language': language
-                }
-                
-                self.stats['wikipedia_success'] += 1
-            
-            # Sauvegarder en cache
-            self.cache[cache_key] = result
-            print(f"✅ TRAITEMENT TERMINÉ en {result['processing_time']}s")
-            return result
-            
-        except Exception as e:
-            print(f"❌ ERREUR GÉNÉRALE: {str(e)}")
-            return {
-                'success': False,
-                'error': f'Erreur lors du traitement: {str(e)}'
-            }
-
-# Instance globale du résumeur
-summarizer = WikipediaMistralSummarizer()
-
-@app.route('/')
-def index():
-    """Page d'accueil avec l'interface"""
-    return '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wikipedia Summarizer Pro</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        :root {
-            --bg-primary: #e6e7ee; --bg-secondary: #d1d2d9; --bg-tertiary: #fbfcff;
-            --text-primary: #5a5c69; --text-secondary: #8b8d97;
-            --accent: #667eea; --accent-secondary: #764ba2;
-            --shadow-light: #bebfc5; --shadow-dark: #ffffff;
-        }
-        
-        [data-theme="dark"] {
-            --bg-primary: #2d3748; --bg-secondary: #1a202c; --bg-tertiary: #4a5568;
-            --text-primary: #f7fafc; --text-secondary: #e2e8f0;
-            --shadow-light: #1a202c; --shadow-dark: #4a5568;
-        }
-        
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
-            min-height: 100vh; padding: 20px;
-            display: flex; align-items: center; justify-content: center;
-            transition: all 0.3s ease;
-        }
-        
-        .container {
-            background: var(--bg-primary); border-radius: 30px; padding: 40px;
-            width: 100%; max-width: 900px; position: relative;
-            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
-        }
-        
-        .container::before {
-            content: ''; position: absolute; top: 0; left: 15px; right: 15px; height: 2px;
-            background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
-            border-radius: 30px 30px 0 0;
-        }
-        
-        .header { text-align: center; margin-bottom: 40px; position: relative; }
-        
-        .header-controls {
-            position: absolute; top: 0; width: 100%;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        
-        .language-selector {
-            background: var(--bg-primary); border: none; border-radius: 15px;
-            padding: 10px 15px; cursor: pointer; font-size: 0.9rem;
-            color: var(--text-primary); transition: all 0.2s ease;
-            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
-        }
-        
-        .language-selector:hover { transform: translateY(-2px); }
-        
-        .right-controls { display: flex; align-items: center; gap: 15px; }
-        
-        .theme-toggle {
-            background: var(--bg-primary); border: none; border-radius: 15px;
-            padding: 12px; cursor: pointer; font-size: 1.2rem; transition: all 0.2s ease;
-            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
-        }
-        
-        .theme-toggle:hover { transform: translateY(-2px); }
-        
-        .author-link {
-            font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;
-            font-weight: 500; transition: all 0.2s ease;
-        }
-        
-        .author-link:hover {
-            color: var(--accent); transform: translateY(-1px);
-        }
-        
-        .title {
-            font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .subtitle { color: var(--text-secondary); font-size: 1.1rem; }
-        
-        .stats {
-            display: flex; justify-content: center; gap: 20px;
-            margin-bottom: 30px; flex-wrap: wrap;
-        }
-        
-        .stat-item {
-            background: var(--bg-primary); padding: 10px 20px; border-radius: 15px;
-            font-size: 0.9rem; color: var(--text-secondary);
-            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark);
-        }
-        
-        .form-section {
-            background: var(--bg-primary); border-radius: 25px; padding: 30px; margin-bottom: 30px;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .form-group { margin-bottom: 25px; }
-        
-        .label {
-            display: block; color: var(--text-primary); font-weight: 600;
-            margin-bottom: 12px; font-size: 1rem;
-        }
-        
-        .input {
-            width: 100%; padding: 18px 24px; background: var(--bg-primary);
-            border: none; border-radius: 20px; font-size: 1rem; color: var(--text-primary);
-            outline: none; transition: all 0.3s ease;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .input:focus {
-            box-shadow: inset 12px 12px 20px var(--shadow-light), inset -12px -12px 20px var(--shadow-dark);
-        }
-        
-        .input::placeholder { color: var(--text-secondary); }
-        
-        .length-selector { display: flex; gap: 15px; flex-wrap: wrap; }
-        
-        .length-btn {
-            background: var(--bg-primary); border: none; border-radius: 15px;
-            padding: 12px 20px; font-size: 0.9rem; color: var(--text-secondary);
-            cursor: pointer; transition: all 0.2s ease; flex: 1; min-width: 150px;
-            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
-        }
-        
-        .length-btn:hover { transform: translateY(-2px); }
-        
-        .length-btn.active {
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            color: white; box-shadow: inset 4px 4px 8px rgba(0,0,0,0.2);
-        }
-        
-        .suggestions { margin-top: 15px; }
-        .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-        
-        .chip {
-            background: var(--bg-tertiary); border: none; border-radius: 20px;
-            padding: 8px 16px; font-size: 0.8rem; color: var(--text-primary);
-            cursor: pointer; transition: all 0.2s ease;
-            box-shadow: 3px 3px 6px var(--shadow-light), -3px -3px 6px var(--shadow-dark);
-        }
-        
-        .chip:hover {
-            background: var(--accent); color: white; transform: translateY(-2px);
-        }
-        
-        .btn {
-            background: var(--bg-primary); border: none; border-radius: 20px;
-            padding: 18px 36px; font-size: 1.1rem; font-weight: 600;
-            color: var(--text-primary); cursor: pointer; transition: all 0.2s ease;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 12px 12px 20px var(--shadow-light), -12px -12px 20px var(--shadow-dark);
-        }
-        
-        .btn:active {
-            transform: translateY(0);
-            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark);
-        }
-        
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            color: white;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .btn-primary:hover:not(:disabled) {
-            box-shadow: 12px 12px 20px var(--shadow-light), -12px -12px 20px var(--shadow-dark);
-        }
-        
-        .controls {
-            display: flex; justify-content: center; align-items: center;
-            flex-wrap: wrap; gap: 15px;
-        }
-        
-        .status {
-            margin: 30px 0; padding: 25px; background: var(--bg-primary);
-            border-radius: 20px; display: none;
-            box-shadow: inset 6px 6px 12px var(--shadow-light), inset -6px -6px 12px var(--shadow-dark);
-        }
-        
-        .status.active { display: block; animation: slideDown 0.3s ease; }
-        
-        .status-text {
-            color: var(--text-primary); font-weight: 500; margin-bottom: 15px;
-            display: flex; align-items: center;
-        }
-        
-        .progress-bar {
-            width: 100%; height: 8px; background: var(--bg-secondary);
-            border-radius: 10px; overflow: hidden;
-            box-shadow: inset 3px 3px 6px var(--shadow-light), inset -3px -3px 6px var(--shadow-dark);
-        }
-        
-        .progress-fill {
-            height: 100%; border-radius: 10px; width: 0%; transition: width 0.3s ease;
-            background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
-        }
-        
-        .result {
-            margin-top: 30px; padding: 30px; background: var(--bg-primary);
-            border-radius: 25px; display: none; position: relative;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .result.active { display: block; animation: slideUp 0.5s ease; }
-        
-        .result-header {
-            display: flex; justify-content: space-between; align-items: flex-start;
-            margin-bottom: 15px;
-        }
+}
         
         .result-title {
             color: var(--text-primary); font-size: 1.3rem; font-weight: 600;
@@ -675,6 +105,15 @@ def index():
             .stat-item { padding: 8px 15px; font-size: 0.8rem; }
             .length-selector { flex-direction: column; gap: 10px; }
             .length-btn { min-width: auto; }
+            .mode-selector { 
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                gap: 8px;
+            }
+            .mode-btn { 
+                min-width: 140px; 
+                padding: 8px 12px;
+                font-size: 0.8rem;
+            }
             .controls { flex-direction: column; gap: 10px; }
             .btn { width: 100%; }
             .result-header { flex-direction: column; align-items: flex-start; }
@@ -738,6 +177,33 @@ def index():
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <label class="label">🎯 <span data-text-key="summary_mode">Summary mode</span> <small data-text-key="optional">(optional)</small></label>
+                    <div class="mode-selector">
+                        <button type="button" class="mode-btn active" onclick="selectMode('general', this)" data-mode="general">
+                            📋 <span data-text-key="general_mode">General</span><br><small><span data-text-key="general_desc">Balanced summary</span></small>
+                        </button>
+                        <button type="button" class="mode-btn" onclick="selectMode('historical', this)" data-mode="historical">
+                            📅 <span data-text-key="historical_mode">Historical</span><br><small><span data-text-key="historical_desc">Dates & events</span></small>
+                        </button>
+                        <button type="button" class="mode-btn" onclick="selectMode('scientific', this)" data-mode="scientific">
+                            🔬 <span data-text-key="scientific_mode">Scientific</span><br><small><span data-text-key="scientific_desc">Theories & discoveries</span></small>
+                        </button>
+                        <button type="button" class="mode-btn" onclick="selectMode('biographical', this)" data-mode="biographical">
+                            👤 <span data-text-key="biographical_mode">Biographical</span><br><small><span data-text-key="biographical_desc">Life & achievements</span></small>
+                        </button>
+                        <button type="button" class="mode-btn" onclick="selectMode('educational', this)" data-mode="educational">
+                            🎓 <span data-text-key="educational_mode">Educational</span><br><small><span data-text-key="educational_desc">Student-friendly</span></small>
+                        </button>
+                        <button type="button" class="mode-btn" onclick="selectMode('cultural', this)" data-mode="cultural">
+                            🎨 <span data-text-key="cultural_mode">Cultural</span><br><small><span data-text-key="cultural_desc">Social impact</span></small>
+                        </button>
+                        <button type="button" class="mode-btn" onclick="selectMode('essential', this)" data-mode="essential">
+                            ⚡ <span data-text-key="essential_mode">Essential</span><br><small><span data-text-key="essential_desc">Key facts only</span></small>
+                        </button>
+                    </div>
+                </div>
+
                 <div class="controls">
                     <button type="submit" class="btn btn-primary" id="generateBtn">
                         ✨ <span data-text-key="generate">Generate summary</span>
@@ -793,8 +259,9 @@ def index():
         let currentLength = 'moyen';
         let currentLanguage = 'en';
         let currentTheme = 'light';
+        let currentMode = 'general';
         
-        // Translations object
+        // Translations object with new mode-related translations
         const translations = {
             en: {
                 title: "Wikipedia Summarizer Pro",
@@ -803,12 +270,28 @@ def index():
                 search_placeholder: "Artificial intelligence, Paris, Einstein...",
                 popular_suggestions: "Popular suggestions:",
                 summary_length: "Summary length",
+                summary_mode: "Summary mode",
+                optional: "(optional)",
                 short: "Short",
                 medium: "Medium",
                 long: "Long",
                 short_desc: "150-200 words",
                 medium_desc: "250-350 words", 
                 long_desc: "400-500 words",
+                general_mode: "General",
+                general_desc: "Balanced summary",
+                historical_mode: "Historical",
+                historical_desc: "Dates & events",
+                scientific_mode: "Scientific",
+                scientific_desc: "Theories & discoveries",
+                biographical_mode: "Biographical",
+                biographical_desc: "Life & achievements",
+                educational_mode: "Educational",
+                educational_desc: "Student-friendly",
+                cultural_mode: "Cultural",
+                cultural_desc: "Social impact",
+                essential_mode: "Essential",
+                essential_desc: "Key facts only",
                 generate: "Generate summary",
                 clear: "Clear",
                 processing: "Processing...",
@@ -843,12 +326,28 @@ def index():
                 search_placeholder: "Intelligence artificielle, Paris, Einstein...",
                 popular_suggestions: "Suggestions populaires:",
                 summary_length: "Longueur du résumé",
+                summary_mode: "Mode de résumé",
+                optional: "(optionnel)",
                 short: "Court",
                 medium: "Moyen", 
                 long: "Long",
                 short_desc: "150-200 mots",
                 medium_desc: "250-350 mots",
                 long_desc: "400-500 mots",
+                general_mode: "Général",
+                general_desc: "Résumé équilibré",
+                historical_mode: "Historique",
+                historical_desc: "Dates et événements",
+                scientific_mode: "Scientifique",
+                scientific_desc: "Théories et découvertes",
+                biographical_mode: "Biographique",
+                biographical_desc: "Vie et réalisations",
+                educational_mode: "Éducatif",
+                educational_desc: "Adapté aux étudiants",
+                cultural_mode: "Culturel",
+                cultural_desc: "Impact social",
+                essential_mode: "Essentiel",
+                essential_desc: "Faits clés uniquement",
                 generate: "Générer le résumé",
                 clear: "Effacer",
                 processing: "Traitement en cours...",
@@ -883,12 +382,28 @@ def index():
                 search_placeholder: "Inteligencia artificial, París, Einstein...",
                 popular_suggestions: "Sugerencias populares:",
                 summary_length: "Longitud del resumen",
+                summary_mode: "Modo de resumen",
+                optional: "(opcional)",
                 short: "Corto",
                 medium: "Medio",
                 long: "Largo", 
                 short_desc: "150-200 palabras",
                 medium_desc: "250-350 palabras",
                 long_desc: "400-500 palabras",
+                general_mode: "General",
+                general_desc: "Resumen equilibrado",
+                historical_mode: "Histórico",
+                historical_desc: "Fechas y eventos",
+                scientific_mode: "Científico",
+                scientific_desc: "Teorías y descubrimientos",
+                biographical_mode: "Biográfico",
+                biographical_desc: "Vida y logros",
+                educational_mode: "Educativo",
+                educational_desc: "Apto para estudiantes",
+                cultural_mode: "Cultural",
+                cultural_desc: "Impacto social",
+                essential_mode: "Esencial",
+                essential_desc: "Solo hechos clave",
                 generate: "Generar resumen",
                 clear: "Limpiar",
                 processing: "Procesando...",
@@ -1041,7 +556,7 @@ def index():
                 return false;
             }
 
-            processTheme(theme, currentLength, currentLanguage);
+            processTheme(theme, currentLength, currentLanguage, currentMode);
             return false;
         }
 
@@ -1049,6 +564,12 @@ def index():
             document.querySelectorAll('.length-btn').forEach(btn => btn.classList.remove('active'));
             element.classList.add('active');
             currentLength = length;
+        }
+
+        function selectMode(mode, element) {
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            currentMode = mode;
         }
 
         function initializeSuggestions() {
@@ -1101,7 +622,7 @@ def index():
             if (elements.aiOnly) elements.aiOnly.textContent = stats.mistral_only || 0;
         }
 
-        async function processTheme(theme, lengthMode, language) {
+        async function processTheme(theme, lengthMode, language, summaryMode) {
             isProcessing = true;
             const generateBtn = document.getElementById('generateBtn');
             const generateText = generateBtn.querySelector('[data-text-key="generate"]');
@@ -1118,7 +639,8 @@ def index():
                 const requestData = {
                     theme: theme,
                     length_mode: lengthMode,
-                    language: language
+                    language: language,
+                    summary_mode: summaryMode
                 };
                 
                 updateProgress(20);
@@ -1218,7 +740,23 @@ def index():
             
             const sourceIcon = data.source === 'wikipedia' ? '📖' : '🤖';
             const sourceText = data.source === 'wikipedia' ? translations[currentLanguage].wikipedia : translations[currentLanguage].ai_only;
+            
+            // Add mode info to meta text
+            const modeNames = {
+                general: translations[currentLanguage].general_mode,
+                historical: translations[currentLanguage].historical_mode,
+                scientific: translations[currentLanguage].scientific_mode,
+                biographical: translations[currentLanguage].biographical_mode,
+                educational: translations[currentLanguage].educational_mode,
+                cultural: translations[currentLanguage].cultural_mode,
+                essential: translations[currentLanguage].essential_mode
+            };
+            const modeText = modeNames[data.summary_mode] || data.summary_mode;
+            
             let metaText = `${sourceIcon} ${sourceText} • ${data.processing_time}s • ${data.length_mode}`;
+            if (data.summary_mode && data.summary_mode !== 'general') {
+                metaText += ` • ${modeText}`;
+            }
             
             if (data.method) metaText += ` • ${data.method}`;
             if (elements.meta) elements.meta.textContent = metaText;
@@ -1315,7 +853,7 @@ def index():
 
 @app.route('/api/summarize', methods=['POST'])
 def summarize():
-    """API endpoint pour traiter les résumés avec support multilingue"""
+    """API endpoint pour traiter les résumés avec support multilingue et modes de résumé"""
     try:
         print("🚀 REQUÊTE /api/summarize")
         
@@ -1330,13 +868,14 @@ def summarize():
         theme = data.get('theme')
         length_mode = data.get('length_mode', 'moyen')
         language = data.get('language', 'en')
+        summary_mode = data.get('summary_mode', 'general')
         
         if not theme or not theme.strip():
             return jsonify({'success': False, 'error': 'Thème requis'}), 400
         
-        print(f"🚀 TRAITEMENT: '{theme}' ({length_mode}, {language})")
+        print(f"🚀 TRAITEMENT: '{theme}' ({length_mode}, {language}, mode: {summary_mode})")
         
-        result = summarizer.process_theme(theme, length_mode, language)
+        result = summarizer.process_theme(theme, length_mode, language, summary_mode)
         
         if not result.get('success'):
             error_msg = result.get('error', 'Erreur inconnue')
@@ -1365,7 +904,7 @@ def health_check():
     return jsonify({'status': 'OK', 'service': 'Wikipedia Summarizer Pro'}), 200
 
 if __name__ == '__main__':
-    print("🌐 WIKIPEDIA SUMMARIZER PRO - VERSION ENHANCED")
+    print("🌐 WIKIPEDIA SUMMARIZER PRO - VERSION ENHANCED WITH SUMMARY MODES")
     print("="*60)
     
     try:
@@ -1394,4 +933,626 @@ if __name__ == '__main__':
         host='0.0.0.0', 
         port=port, 
         debug=debug_mode
-    )
+    )from flask import Flask, request, jsonify
+import requests
+import json
+from mistralai import Mistral
+import wikipedia
+import os
+import re
+import time
+import hashlib
+
+app = Flask(__name__)
+
+class WikipediaMistralSummarizer:
+    def __init__(self):
+        """
+        Initialise le résumeur avec clés API depuis variables d'environnement
+        """
+        # Clés API Mistral depuis variables d'environnement OU valeurs par défaut
+        self.api_keys = [
+            os.environ.get('MISTRAL_KEY_1', 'FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX'),
+            os.environ.get('MISTRAL_KEY_2', '9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF'),
+            os.environ.get('MISTRAL_KEY_3', 'cvkQHVcomFFEW47G044x2p4DTyk5BIc7')
+        ]
+        
+        self.current_key_index = 0
+        
+        # Cache des résumés (en mémoire)
+        self.cache = {}
+        
+        # Statistiques
+        self.stats = {
+            'requests': 0,
+            'cache_hits': 0,
+            'wikipedia_success': 0,
+            'mistral_only': 0
+        }
+        
+        # Configuration Wikipedia par défaut
+        self.current_language = 'en'
+        self.setup_wikipedia_language('en')
+    
+    def setup_wikipedia_language(self, lang_code):
+        """Configure Wikipedia pour une langue donnée"""
+        try:
+            wikipedia.set_lang(lang_code)
+            wikipedia.set_rate_limiting(True)
+            self.current_language = lang_code
+            print(f"✅ Wikipedia configuré pour: {lang_code}")
+        except Exception as e:
+            print(f"⚠️ Erreur config Wikipedia ({lang_code}): {e}")
+            # Fallback vers l'anglais
+            try:
+                wikipedia.set_lang('en')
+                self.current_language = 'en'
+            except:
+                pass
+    
+    def get_mistral_client(self):
+        """Obtient un client Mistral avec rotation des clés"""
+        key = self.api_keys[self.current_key_index % len(self.api_keys)]
+        self.current_key_index += 1
+        return Mistral(api_key=key)
+    
+    def retry_with_different_keys(self, func, *args, **kwargs):
+        """Retry une fonction avec toutes les clés API disponibles"""
+        last_exception = None
+        
+        for attempt in range(len(self.api_keys)):
+            try:
+                print(f"Tentative {attempt + 1} avec clé API")
+                result = func(*args, **kwargs)
+                return result
+            except Exception as e:
+                print(f"Erreur avec clé {attempt + 1}: {str(e)}")
+                last_exception = e
+                self.current_key_index += 1
+                continue
+        
+        raise Exception(f"Toutes les clés API ont échoué. Dernière erreur: {str(last_exception)}")
+    
+    def get_cache_key(self, theme, length_mode, language, summary_mode='general'):
+        """Génère une clé de cache unique incluant la langue et le mode de résumé"""
+        return hashlib.md5(f"{theme.lower().strip()}_{length_mode}_{language}_{summary_mode}".encode()).hexdigest()
+    
+    def smart_wikipedia_search(self, theme):
+        """Recherche intelligente sur Wikipedia"""
+        print(f"🔍 Recherche Wikipedia pour: '{theme}' (langue: {self.current_language})")
+        
+        theme_clean = theme.strip()
+        
+        try:
+            print("Tentative de recherche directe...")
+            page = wikipedia.page(theme_clean, auto_suggest=False)
+            print(f"✅ Trouvé directement: {page.title}")
+            return {
+                'title': page.title,
+                'content': page.content[:8000],  # Limiter pour Render
+                'url': page.url,
+                'method': 'direct'
+            }
+        except wikipedia.exceptions.DisambiguationError as e:
+            try:
+                page = wikipedia.page(e.options[0])
+                print(f"✅ Trouvé via désambiguïsation: {page.title}")
+                return {
+                    'title': page.title,
+                    'content': page.content[:8000],
+                    'url': page.url,
+                    'method': 'disambiguation'
+                }
+            except:
+                pass
+        except:
+            pass
+        
+        try:
+            print("Recherche avec suggestions...")
+            suggestions = wikipedia.search(theme_clean, results=3)
+            print(f"Suggestions trouvées: {suggestions}")
+            
+            if suggestions:
+                for suggestion in suggestions:
+                    try:
+                        page = wikipedia.page(suggestion)
+                        print(f"✅ Trouvé via suggestion: {page.title}")
+                        return {
+                            'title': page.title,
+                            'content': page.content[:8000],
+                            'url': page.url,
+                            'method': f'suggestion ({suggestion})'
+                        }
+                    except:
+                        continue
+        except:
+            pass
+        
+        print(f"❌ Aucune page Wikipedia trouvée pour: '{theme}'")
+        return None
+    
+    def markdown_to_html(self, text):
+        """Convertit le Markdown simple en HTML"""
+        if not text:
+            return ""
+        
+        text = text.strip()
+        text = re.sub(r'\*\*([^*]+?)\*\*', r'<strong>\1</strong>', text)
+        text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
+        
+        paragraphs = text.split('\n\n')
+        formatted_paragraphs = []
+        
+        for para in paragraphs:
+            para = para.strip()
+            if para and not para.startswith('<'):
+                para = f'<p>{para}</p>'
+            if para:
+                formatted_paragraphs.append(para)
+        
+        return '\n'.join(formatted_paragraphs)
+    
+    def get_word_count_for_length(self, length_mode):
+        """Retourne le nombre de mots selon la longueur"""
+        configs = {
+            'court': '150-200 mots',
+            'moyen': '250-350 mots', 
+            'long': '400-500 mots'
+        }
+        return configs.get(length_mode, configs['moyen'])
+    
+    def get_language_instruction(self, language):
+        """Retourne l'instruction de langue pour Mistral"""
+        language_instructions = {
+            'en': 'Write the summary in English.',
+            'fr': 'Écris le résumé en français.',
+            'es': 'Escribe el resumen en español.'
+        }
+        return language_instructions.get(language, language_instructions['en'])
+    
+    def get_summary_mode_instruction(self, mode, language):
+        """Retourne l'instruction spécialisée selon le mode de résumé"""
+        if not mode or mode == 'general':
+            return ""
+        
+        mode_instructions = {
+            'en': {
+                'historical': 'Focus on historical context: important dates, time periods, key historical figures, major events, and historical significance. Emphasize the chronological development and historical impact.',
+                'scientific': 'Focus on scientific aspects: definitions, theories, experiments, discoveries, scientific principles, and research findings. Emphasize factual accuracy and scientific methodology.',
+                'biographical': 'Focus on biographical information: life journey, important dates, key achievements, personal background, career milestones, and significant contributions. Emphasize the person\'s life story and impact.',
+                'educational': 'Focus on educational clarity: simple explanations suitable for students, key concepts broken down, essential points for learning. Use accessible language and clear structure for study purposes.',
+                'cultural': 'Focus on cultural impact: social significance, artistic influence, cultural context, impact on society, cultural movements, and cultural legacy. Emphasize cultural and social dimensions.',
+                'essential': 'Focus on essential facts: key points, main characteristics, most important information in a concise format. Structure like a study sheet with crucial facts only.'
+            },
+            'fr': {
+                'historical': 'Concentre-toi sur le contexte historique : dates importantes, périodes, personnages historiques clés, événements majeurs et signification historique. Mets l\'accent sur le développement chronologique et l\'impact historique.',
+                'scientific': 'Concentre-toi sur les aspects scientifiques : définitions, théories, expériences, découvertes, principes scientifiques et résultats de recherche. Mets l\'accent sur la précision factuelle et la méthodologie scientifique.',
+                'biographical': 'Concentre-toi sur les informations biographiques : parcours de vie, dates importantes, réalisations clés, contexte personnel, étapes de carrière et contributions significatives. Mets l\'accent sur l\'histoire de vie et l\'impact de la personne.',
+                'educational': 'Concentre-toi sur la clarté éducative : explications simples adaptées aux étudiants, concepts clés décomposés, points essentiels pour l\'apprentissage. Utilise un langage accessible et une structure claire pour les études.',
+                'cultural': 'Concentre-toi sur l\'impact culturel : signification sociale, influence artistique, contexte culturel, impact sur la société, mouvements culturels et héritage culturel. Mets l\'accent sur les dimensions culturelles et sociales.',
+                'essential': 'Concentre-toi sur les faits essentiels : points clés, caractéristiques principales, informations les plus importantes dans un format concis. Structure comme une fiche d\'étude avec seulement les faits cruciaux.'
+            },
+            'es': {
+                'historical': 'Enfócate en el contexto histórico: fechas importantes, períodos, figuras históricas clave, eventos principales y significado histórico. Enfatiza el desarrollo cronológico y el impacto histórico.',
+                'scientific': 'Enfócate en los aspectos científicos: definiciones, teorías, experimentos, descubrimientos, principios científicos y hallazgos de investigación. Enfatiza la precisión factual y la metodología científica.',
+                'biographical': 'Enfócate en información biográfica: trayectoria de vida, fechas importantes, logros clave, contexto personal, hitos de carrera y contribuciones significativas. Enfatiza la historia de vida y el impacto de la persona.',
+                'educational': 'Enfócate en claridad educativa: explicaciones simples adecuadas para estudiantes, conceptos clave desglosados, puntos esenciales para el aprendizaje. Usa lenguaje accesible y estructura clara para propósitos de estudio.',
+                'cultural': 'Enfócate en el impacto cultural: significado social, influencia artística, contexto cultural, impacto en la sociedad, movimientos culturales y legado cultural. Enfatiza las dimensiones culturales y sociales.',
+                'essential': 'Enfócate en hechos esenciales: puntos clave, características principales, información más importante en formato conciso. Estructura como una hoja de estudio con solo los hechos cruciales.'
+            }
+        }
+        
+        return mode_instructions.get(language, mode_instructions['en']).get(mode, "")
+    
+    def summarize_with_mistral(self, title, content, length_mode='moyen', language='en', summary_mode='general'):
+        """Utilise Mistral AI pour résumer le contenu Wikipedia"""
+        def _summarize():
+            client = self.get_mistral_client()
+            
+            max_chars = 6000  # Réduit pour Render
+            if len(content) > max_chars:
+                content_truncated = content[:max_chars] + "..."
+            else:
+                content_truncated = content
+            
+            word_count = self.get_word_count_for_length(length_mode)
+            language_instruction = self.get_language_instruction(language)
+            mode_instruction = self.get_summary_mode_instruction(summary_mode, language)
+            
+            prompt = f"""You are an expert summarizer. Here is the content of a Wikipedia page about "{title}".
+
+Wikipedia Content:
+{content_truncated}
+
+Instructions: Create a clear, informative and well-structured summary of this Wikipedia page.
+- The summary should be approximately {word_count}
+- Use accessible and precise language
+- Structure the text in coherent paragraphs
+- Focus on the most important information
+- Write in plain text, without markdown formatting
+- {language_instruction}
+{f'- {mode_instruction}' if mode_instruction else ''}
+
+Summary:"""
+            
+            # Format correct pour Mistral AI v1.0.0
+            messages = [{"role": "user", "content": prompt}]
+            
+            response = client.chat.complete(
+                model="mistral-large-latest",
+                messages=messages,
+                temperature=0.2,
+                max_tokens=600
+            )
+            
+            return response.choices[0].message.content.strip()
+        
+        return self.retry_with_different_keys(_summarize)
+    
+    def answer_with_mistral_only(self, theme, length_mode='moyen', language='en', summary_mode='general'):
+        """Utilise Mistral AI pour répondre directement sur un thème sans Wikipedia"""
+        def _answer():
+            client = self.get_mistral_client()
+            
+            word_count = self.get_word_count_for_length(length_mode)
+            language_instruction = self.get_language_instruction(language)
+            mode_instruction = self.get_summary_mode_instruction(summary_mode, language)
+            
+            prompt = f"""You are an expert assistant who must provide complete information on a subject.
+
+Requested topic: "{theme}"
+
+Instructions: Provide a complete and informative explanation of this topic.
+- Explain what it is, its context, its importance
+- Give useful and interesting details
+- The text should be approximately {word_count}
+- Use clear and accessible language
+- Structure in coherent paragraphs
+- Write in plain text, without markdown formatting
+- {language_instruction}
+{f'- {mode_instruction}' if mode_instruction else ''}
+
+Response:"""
+            
+            messages = [{"role": "user", "content": prompt}]
+            
+            response = client.chat.complete(
+                model="mistral-large-latest", 
+                messages=messages,
+                temperature=0.3,
+                max_tokens=600
+            )
+            
+            return response.choices[0].message.content.strip()
+        
+        return self.retry_with_different_keys(_answer)
+
+    def process_theme(self, theme, length_mode='moyen', language='en', summary_mode='general'):
+        """Traite un thème complet avec support multilingue et modes de résumé"""
+        print(f"\n🚀 DÉBUT DU TRAITEMENT: '{theme}' (longueur: {length_mode}, langue: {language}, mode: {summary_mode})")
+        self.stats['requests'] += 1
+        start_time = time.time()
+        
+        if not theme or len(theme.strip()) < 2:
+            return {
+                'success': False,
+                'error': 'Le thème doit contenir au moins 2 caractères'
+            }
+        
+        theme = theme.strip()
+        
+        # Configurer Wikipedia pour la langue demandée
+        lang_code = {'en': 'en', 'fr': 'fr', 'es': 'es'}.get(language, 'en')
+        self.setup_wikipedia_language(lang_code)
+        
+        # Vérifier le cache
+        cache_key = self.get_cache_key(theme, length_mode, language, summary_mode)
+        if cache_key in self.cache:
+            print("💾 Résultat trouvé en cache")
+            self.stats['cache_hits'] += 1
+            return self.cache[cache_key]
+        
+        try:
+            wiki_data = self.smart_wikipedia_search(theme)
+            
+            if not wiki_data:
+                print(f"🤖 Génération directe avec Mistral pour: {theme}")
+                mistral_response = self.answer_with_mistral_only(theme, length_mode, language, summary_mode)
+                
+                if not mistral_response:
+                    return {'success': False, 'error': 'Erreur lors de la génération de la réponse'}
+                
+                formatted_response = self.markdown_to_html(mistral_response)
+                
+                result = {
+                    'success': True,
+                    'title': f"Informations sur: {theme}",
+                    'summary': formatted_response,
+                    'url': None,
+                    'source': 'mistral_only',
+                    'method': 'direct_ai',
+                    'processing_time': round(time.time() - start_time, 2),
+                    'length_mode': length_mode,
+                    'language': language,
+                    'summary_mode': summary_mode
+                }
+                
+                self.stats['mistral_only'] += 1
+                
+            else:
+                print(f"📖 Résumé Wikipedia pour: {wiki_data['title']}")
+                summary = self.summarize_with_mistral(wiki_data['title'], wiki_data['content'], length_mode, language, summary_mode)
+                
+                if not summary:
+                    return {'success': False, 'error': 'Erreur lors de la génération du résumé'}
+                
+                formatted_summary = self.markdown_to_html(summary)
+                
+                result = {
+                    'success': True,
+                    'title': wiki_data['title'],
+                    'summary': formatted_summary,
+                    'url': wiki_data['url'],
+                    'source': 'wikipedia',
+                    'method': wiki_data['method'],
+                    'processing_time': round(time.time() - start_time, 2),
+                    'length_mode': length_mode,
+                    'language': language,
+                    'summary_mode': summary_mode
+                }
+                
+                self.stats['wikipedia_success'] += 1
+            
+            # Sauvegarder en cache
+            self.cache[cache_key] = result
+            print(f"✅ TRAITEMENT TERMINÉ en {result['processing_time']}s")
+            return result
+            
+        except Exception as e:
+            print(f"❌ ERREUR GÉNÉRALE: {str(e)}")
+            return {
+                'success': False,
+                'error': f'Erreur lors du traitement: {str(e)}'
+            }
+
+# Instance globale du résumeur
+summarizer = WikipediaMistralSummarizer()
+
+@app.route('/')
+def index():
+    """Page d'accueil avec l'interface"""
+    return '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wikipedia Summarizer Pro</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg-primary: #e6e7ee; --bg-secondary: #d1d2d9; --bg-tertiary: #fbfcff;
+            --text-primary: #5a5c69; --text-secondary: #8b8d97;
+            --accent: #667eea; --accent-secondary: #764ba2;
+            --shadow-light: #bebfc5; --shadow-dark: #ffffff;
+        }
+        
+        [data-theme="dark"] {
+            --bg-primary: #2d3748; --bg-secondary: #1a202c; --bg-tertiary: #4a5568;
+            --text-primary: #f7fafc; --text-secondary: #e2e8f0;
+            --shadow-light: #1a202c; --shadow-dark: #4a5568;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            min-height: 100vh; padding: 20px;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.3s ease;
+        }
+        
+        .container {
+            background: var(--bg-primary); border-radius: 30px; padding: 40px;
+            width: 100%; max-width: 900px; position: relative;
+            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
+        }
+        
+        .container::before {
+            content: ''; position: absolute; top: 0; left: 15px; right: 15px; height: 2px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
+            border-radius: 30px 30px 0 0;
+        }
+        
+        .header { text-align: center; margin-bottom: 40px; position: relative; }
+        
+        .header-controls {
+            position: absolute; top: 0; width: 100%;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        
+        .language-selector {
+            background: var(--bg-primary); border: none; border-radius: 15px;
+            padding: 10px 15px; cursor: pointer; font-size: 0.9rem;
+            color: var(--text-primary); transition: all 0.2s ease;
+            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+        }
+        
+        .language-selector:hover { transform: translateY(-2px); }
+        
+        .right-controls { display: flex; align-items: center; gap: 15px; }
+        
+        .theme-toggle {
+            background: var(--bg-primary); border: none; border-radius: 15px;
+            padding: 12px; cursor: pointer; font-size: 1.2rem; transition: all 0.2s ease;
+            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+        }
+        
+        .theme-toggle:hover { transform: translateY(-2px); }
+        
+        .author-link {
+            font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;
+            font-weight: 500; transition: all 0.2s ease;
+        }
+        
+        .author-link:hover {
+            color: var(--accent); transform: translateY(-1px);
+        }
+        
+        .title {
+            font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle { color: var(--text-secondary); font-size: 1.1rem; }
+        
+        .stats {
+            display: flex; justify-content: center; gap: 20px;
+            margin-bottom: 30px; flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            background: var(--bg-primary); padding: 10px 20px; border-radius: 15px;
+            font-size: 0.9rem; color: var(--text-secondary);
+            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark);
+        }
+        
+        .form-section {
+            background: var(--bg-primary); border-radius: 25px; padding: 30px; margin-bottom: 30px;
+            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
+        }
+        
+        .form-group { margin-bottom: 25px; }
+        
+        .label {
+            display: block; color: var(--text-primary); font-weight: 600;
+            margin-bottom: 12px; font-size: 1rem;
+        }
+        
+        .input {
+            width: 100%; padding: 18px 24px; background: var(--bg-primary);
+            border: none; border-radius: 20px; font-size: 1rem; color: var(--text-primary);
+            outline: none; transition: all 0.3s ease;
+            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
+        }
+        
+        .input:focus {
+            box-shadow: inset 12px 12px 20px var(--shadow-light), inset -12px -12px 20px var(--shadow-dark);
+        }
+        
+        .input::placeholder { color: var(--text-secondary); }
+        
+        .length-selector, .mode-selector { display: flex; gap: 15px; flex-wrap: wrap; }
+        
+        .length-btn, .mode-btn {
+            background: var(--bg-primary); border: none; border-radius: 15px;
+            padding: 12px 20px; font-size: 0.9rem; color: var(--text-secondary);
+            cursor: pointer; transition: all 0.2s ease; flex: 1; min-width: 150px;
+            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+        }
+        
+        .length-btn:hover, .mode-btn:hover { transform: translateY(-2px); }
+        
+        .length-btn.active, .mode-btn.active {
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            color: white; box-shadow: inset 4px 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .mode-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+        }
+        
+        .mode-btn {
+            min-width: 160px;
+            padding: 10px 15px;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        
+        .suggestions { margin-top: 15px; }
+        .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        
+        .chip {
+            background: var(--bg-tertiary); border: none; border-radius: 20px;
+            padding: 8px 16px; font-size: 0.8rem; color: var(--text-primary);
+            cursor: pointer; transition: all 0.2s ease;
+            box-shadow: 3px 3px 6px var(--shadow-light), -3px -3px 6px var(--shadow-dark);
+        }
+        
+        .chip:hover {
+            background: var(--accent); color: white; transform: translateY(-2px);
+        }
+        
+        .btn {
+            background: var(--bg-primary); border: none; border-radius: 20px;
+            padding: 18px 36px; font-size: 1.1rem; font-weight: 600;
+            color: var(--text-primary); cursor: pointer; transition: all 0.2s ease;
+            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
+        }
+        
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 12px 12px 20px var(--shadow-light), -12px -12px 20px var(--shadow-dark);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark);
+        }
+        
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            color: white;
+            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            box-shadow: 12px 12px 20px var(--shadow-light), -12px -12px 20px var(--shadow-dark);
+        }
+        
+        .controls {
+            display: flex; justify-content: center; align-items: center;
+            flex-wrap: wrap; gap: 15px;
+        }
+        
+        .status {
+            margin: 30px 0; padding: 25px; background: var(--bg-primary);
+            border-radius: 20px; display: none;
+            box-shadow: inset 6px 6px 12px var(--shadow-light), inset -6px -6px 12px var(--shadow-dark);
+        }
+        
+        .status.active { display: block; animation: slideDown 0.3s ease; }
+        
+        .status-text {
+            color: var(--text-primary); font-weight: 500; margin-bottom: 15px;
+            display: flex; align-items: center;
+        }
+        
+        .progress-bar {
+            width: 100%; height: 8px; background: var(--bg-secondary);
+            border-radius: 10px; overflow: hidden;
+            box-shadow: inset 3px 3px 6px var(--shadow-light), inset -3px -3px 6px var(--shadow-dark);
+        }
+        
+        .progress-fill {
+            height: 100%; border-radius: 10px; width: 0%; transition: width 0.3s ease;
+            background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
+        }
+        
+        .result {
+            margin-top: 30px; padding: 30px; background: var(--bg-primary);
+            border-radius: 25px; display: none; position: relative;
+            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
+        }
+        
+        .result.active { display: block; animation: slideUp 0.5s ease; }
+        
+        .result-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-bottom: 15px;
