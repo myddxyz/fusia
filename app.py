@@ -35,13 +35,25 @@ class WikipediaMistralSummarizer:
             'mistral_only': 0
         }
         
-        # Configuration Wikipedia
+        # Configuration Wikipedia par défaut
+        self.current_language = 'en'
+        self.setup_wikipedia_language('en')
+    
+    def setup_wikipedia_language(self, lang_code):
+        """Configure Wikipedia pour une langue donnée"""
         try:
-            wikipedia.set_lang("fr")
+            wikipedia.set_lang(lang_code)
             wikipedia.set_rate_limiting(True)
-            print("✅ Wikipedia configuré")
+            self.current_language = lang_code
+            print(f"✅ Wikipedia configuré pour: {lang_code}")
         except Exception as e:
-            print(f"⚠️ Erreur config Wikipedia: {e}")
+            print(f"⚠️ Erreur config Wikipedia ({lang_code}): {e}")
+            # Fallback vers l'anglais
+            try:
+                wikipedia.set_lang('en')
+                self.current_language = 'en'
+            except:
+                pass
     
     def get_mistral_client(self):
         """Obtient un client Mistral avec rotation des clés"""
@@ -66,13 +78,13 @@ class WikipediaMistralSummarizer:
         
         raise Exception(f"Toutes les clés API ont échoué. Dernière erreur: {str(last_exception)}")
     
-    def get_cache_key(self, theme, length_mode):
-        """Génère une clé de cache unique"""
-        return hashlib.md5(f"{theme.lower().strip()}_{length_mode}".encode()).hexdigest()
+    def get_cache_key(self, theme, length_mode, language):
+        """Génère une clé de cache unique incluant la langue"""
+        return hashlib.md5(f"{theme.lower().strip()}_{length_mode}_{language}".encode()).hexdigest()
     
     def smart_wikipedia_search(self, theme):
         """Recherche intelligente sur Wikipedia"""
-        print(f"🔍 Recherche Wikipedia pour: '{theme}'")
+        print(f"🔍 Recherche Wikipedia pour: '{theme}' (langue: {self.current_language})")
         
         theme_clean = theme.strip()
         
@@ -155,7 +167,16 @@ class WikipediaMistralSummarizer:
         }
         return configs.get(length_mode, configs['moyen'])
     
-    def summarize_with_mistral(self, title, content, length_mode='moyen'):
+    def get_language_instruction(self, language):
+        """Retourne l'instruction de langue pour Mistral"""
+        language_instructions = {
+            'en': 'Write the summary in English.',
+            'fr': 'Écris le résumé en français.',
+            'es': 'Escribe el resumen en español.'
+        }
+        return language_instructions.get(language, language_instructions['en'])
+    
+    def summarize_with_mistral(self, title, content, length_mode='moyen', language='en'):
         """Utilise Mistral AI pour résumer le contenu Wikipedia"""
         def _summarize():
             client = self.get_mistral_client()
@@ -167,20 +188,22 @@ class WikipediaMistralSummarizer:
                 content_truncated = content
             
             word_count = self.get_word_count_for_length(length_mode)
+            language_instruction = self.get_language_instruction(language)
             
-            prompt = f"""Tu es un expert en résumé. Voici le contenu d'une page Wikipedia sur "{title}".
+            prompt = f"""You are an expert summarizer. Here is the content of a Wikipedia page about "{title}".
 
-Contenu Wikipedia:
+Wikipedia Content:
 {content_truncated}
 
-Consigne: Crée un résumé clair, informatif et bien structuré de cette page Wikipedia en français.
-- Le résumé doit faire environ {word_count}
-- Utilise un langage accessible et précis
-- Structure le texte en paragraphes cohérents
-- Concentre-toi sur les informations les plus importantes
-- Écris en texte brut, sans formatage markdown
+Instructions: Create a clear, informative and well-structured summary of this Wikipedia page.
+- The summary should be approximately {word_count}
+- Use accessible and precise language
+- Structure the text in coherent paragraphs
+- Focus on the most important information
+- Write in plain text, without markdown formatting
+- {language_instruction}
 
-Résumé:"""
+Summary:"""
             
             # Format correct pour Mistral AI v1.0.0
             messages = [{"role": "user", "content": prompt}]
@@ -196,26 +219,28 @@ Résumé:"""
         
         return self.retry_with_different_keys(_summarize)
     
-    def answer_with_mistral_only(self, theme, length_mode='moyen'):
+    def answer_with_mistral_only(self, theme, length_mode='moyen', language='en'):
         """Utilise Mistral AI pour répondre directement sur un thème sans Wikipedia"""
         def _answer():
             client = self.get_mistral_client()
             
             word_count = self.get_word_count_for_length(length_mode)
+            language_instruction = self.get_language_instruction(language)
             
-            prompt = f"""Tu es un assistant expert qui doit fournir des informations complètes sur un sujet.
+            prompt = f"""You are an expert assistant who must provide complete information on a subject.
 
-Sujet demandé: "{theme}"
+Requested topic: "{theme}"
 
-Consigne: Fournis une explication complète et informative sur ce sujet en français.
-- Explique ce que c'est, son contexte, son importance
-- Donne des détails utiles et intéressants
-- Le texte doit faire environ {word_count}
-- Utilise un langage clair et accessible
-- Structure en paragraphes cohérents
-- Écris en texte brut, sans formatage markdown
+Instructions: Provide a complete and informative explanation of this topic.
+- Explain what it is, its context, its importance
+- Give useful and interesting details
+- The text should be approximately {word_count}
+- Use clear and accessible language
+- Structure in coherent paragraphs
+- Write in plain text, without markdown formatting
+- {language_instruction}
 
-Réponse:"""
+Response:"""
             
             messages = [{"role": "user", "content": prompt}]
             
@@ -230,9 +255,9 @@ Réponse:"""
         
         return self.retry_with_different_keys(_answer)
 
-    def process_theme(self, theme, length_mode='moyen'):
-        """Traite un thème complet"""
-        print(f"\n🚀 DÉBUT DU TRAITEMENT: '{theme}' (longueur: {length_mode})")
+    def process_theme(self, theme, length_mode='moyen', language='en'):
+        """Traite un thème complet avec support multilingue"""
+        print(f"\n🚀 DÉBUT DU TRAITEMENT: '{theme}' (longueur: {length_mode}, langue: {language})")
         self.stats['requests'] += 1
         start_time = time.time()
         
@@ -244,8 +269,12 @@ Réponse:"""
         
         theme = theme.strip()
         
+        # Configurer Wikipedia pour la langue demandée
+        lang_code = {'en': 'en', 'fr': 'fr', 'es': 'es'}.get(language, 'en')
+        self.setup_wikipedia_language(lang_code)
+        
         # Vérifier le cache
-        cache_key = self.get_cache_key(theme, length_mode)
+        cache_key = self.get_cache_key(theme, length_mode, language)
         if cache_key in self.cache:
             print("💾 Résultat trouvé en cache")
             self.stats['cache_hits'] += 1
@@ -256,7 +285,7 @@ Réponse:"""
             
             if not wiki_data:
                 print(f"🤖 Génération directe avec Mistral pour: {theme}")
-                mistral_response = self.answer_with_mistral_only(theme, length_mode)
+                mistral_response = self.answer_with_mistral_only(theme, length_mode, language)
                 
                 if not mistral_response:
                     return {'success': False, 'error': 'Erreur lors de la génération de la réponse'}
@@ -271,14 +300,15 @@ Réponse:"""
                     'source': 'mistral_only',
                     'method': 'direct_ai',
                     'processing_time': round(time.time() - start_time, 2),
-                    'length_mode': length_mode
+                    'length_mode': length_mode,
+                    'language': language
                 }
                 
                 self.stats['mistral_only'] += 1
                 
             else:
                 print(f"📖 Résumé Wikipedia pour: {wiki_data['title']}")
-                summary = self.summarize_with_mistral(wiki_data['title'], wiki_data['content'], length_mode)
+                summary = self.summarize_with_mistral(wiki_data['title'], wiki_data['content'], length_mode, language)
                 
                 if not summary:
                     return {'success': False, 'error': 'Erreur lors de la génération du résumé'}
@@ -293,7 +323,8 @@ Réponse:"""
                     'source': 'wikipedia',
                     'method': wiki_data['method'],
                     'processing_time': round(time.time() - start_time, 2),
-                    'length_mode': length_mode
+                    'length_mode': length_mode,
+                    'language': language
                 }
                 
                 self.stats['wikipedia_success'] += 1
@@ -317,7 +348,7 @@ summarizer = WikipediaMistralSummarizer()
 def index():
     """Page d'accueil avec l'interface"""
     return '''<!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -360,14 +391,38 @@ def index():
         
         .header { text-align: center; margin-bottom: 40px; position: relative; }
         
+        .header-controls {
+            position: absolute; top: 0; width: 100%;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        
+        .language-selector {
+            background: var(--bg-primary); border: none; border-radius: 15px;
+            padding: 10px 15px; cursor: pointer; font-size: 0.9rem;
+            color: var(--text-primary); transition: all 0.2s ease;
+            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+        }
+        
+        .language-selector:hover { transform: translateY(-2px); }
+        
+        .right-controls { display: flex; align-items: center; gap: 15px; }
+        
         .theme-toggle {
-            position: absolute; top: 0; right: 0; background: var(--bg-primary);
-            border: none; border-radius: 15px; padding: 12px; cursor: pointer;
-            font-size: 1.2rem; transition: all 0.2s ease;
+            background: var(--bg-primary); border: none; border-radius: 15px;
+            padding: 12px; cursor: pointer; font-size: 1.2rem; transition: all 0.2s ease;
             box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
         }
         
         .theme-toggle:hover { transform: translateY(-2px); }
+        
+        .author-link {
+            font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;
+            font-weight: 500; transition: all 0.2s ease;
+        }
+        
+        .author-link:hover {
+            color: var(--accent); transform: translateY(-1px);
+        }
         
         .title {
             font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;
@@ -504,16 +559,37 @@ def index():
         
         .result {
             margin-top: 30px; padding: 30px; background: var(--bg-primary);
-            border-radius: 25px; display: none;
+            border-radius: 25px; display: none; position: relative;
             box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
         }
         
         .result.active { display: block; animation: slideUp 0.5s ease; }
         
+        .result-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        
         .result-title {
             color: var(--text-primary); font-size: 1.3rem; font-weight: 600;
-            margin-bottom: 15px; padding-bottom: 15px;
-            border-bottom: 2px solid var(--bg-secondary);
+            padding-bottom: 15px; border-bottom: 2px solid var(--bg-secondary);
+            flex: 1; margin-right: 20px;
+        }
+        
+        .copy-btn {
+            background: var(--bg-primary); border: none; border-radius: 12px;
+            padding: 10px; cursor: pointer; font-size: 1rem; color: var(--text-secondary);
+            transition: all 0.2s ease;
+            box-shadow: 4px 4px 8px var(--shadow-light), -4px -4px 8px var(--shadow-dark);
+        }
+        
+        .copy-btn:hover {
+            transform: translateY(-2px); color: var(--accent);
+            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+        }
+        
+        .copy-btn.success {
+            color: #2ecc71;
         }
         
         .result-meta { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 20px; }
@@ -540,9 +616,44 @@ def index():
             border-top-color: var(--accent); animation: spin 1s ease-in-out infinite;
         }
         
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        
+        .modal.active { display: flex; animation: fadeIn 0.3s ease; }
+        
+        .modal-content {
+            background: var(--bg-primary); border-radius: 25px; padding: 40px;
+            max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;
+            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
+            position: relative;
+        }
+        
+        .modal-close {
+            position: absolute; top: 20px; right: 20px; background: none;
+            border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);
+            transition: color 0.2s ease;
+        }
+        
+        .modal-close:hover { color: var(--text-primary); }
+        
+        .modal h2 {
+            color: var(--text-primary); font-size: 1.8rem; margin-bottom: 20px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .modal p {
+            color: var(--text-secondary); line-height: 1.6; margin-bottom: 15px;
+        }
+        
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         
         .notification {
             position: fixed; top: 20px; right: 20px; padding: 15px 25px;
@@ -558,63 +669,81 @@ def index():
         @media (max-width: 768px) {
             .container { padding: 25px 20px; margin: 10px; }
             .title { font-size: 2rem; }
+            .header-controls { position: relative; justify-content: center; margin-bottom: 20px; }
+            .right-controls { margin-top: 10px; }
             .stats { gap: 10px; }
             .stat-item { padding: 8px 15px; font-size: 0.8rem; }
             .length-selector { flex-direction: column; gap: 10px; }
             .length-btn { min-width: auto; }
             .controls { flex-direction: column; gap: 10px; }
             .btn { width: 100%; }
+            .result-header { flex-direction: column; align-items: flex-start; }
+            .result-title { margin-right: 0; margin-bottom: 15px; }
+            .modal-content { padding: 25px 20px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1 class="title">Wikipedia Summarizer Pro</h1>
-            <p class="subtitle">Résumés intelligents avec Mistral AI</p>
+            <div class="header-controls">
+                <select class="language-selector" id="languageSelector" onchange="changeLanguage()">
+                    <option value="en">🇺🇸 English</option>
+                    <option value="fr">🇫🇷 Français</option>
+                    <option value="es">🇪🇸 Español</option>
+                </select>
+                
+                <div class="right-controls">
+                    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+                    <a href="#" class="author-link" onclick="showAuthorModal()" data-text-key="by_mydd">by Mydd</a>
+                </div>
+            </div>
+            
+            <h1 class="title" data-text-key="title">Wikipedia Summarizer Pro</h1>
+            <p class="subtitle" data-text-key="subtitle">Smart summaries with Mistral AI</p>
         </div>
 
         <div class="stats" id="stats">
-            <div class="stat-item">📊 <span id="totalRequests">0</span> requêtes</div>
-            <div class="stat-item">💾 <span id="cacheHits">0</span> en cache</div>
-            <div class="stat-item">📖 <span id="wikiSuccess">0</span> Wikipedia</div>
-            <div class="stat-item">🤖 <span id="aiOnly">0</span> IA seule</div>
+            <div class="stat-item">📊 <span id="totalRequests">0</span> <span data-text-key="requests">requests</span></div>
+            <div class="stat-item">💾 <span id="cacheHits">0</span> <span data-text-key="cached">cached</span></div>
+            <div class="stat-item">📖 <span id="wikiSuccess">0</span> <span data-text-key="wikipedia">Wikipedia</span></div>
+            <div class="stat-item">🤖 <span id="aiOnly">0</span> <span data-text-key="ai_only">AI only</span></div>
         </div>
 
         <div class="form-section">
             <form id="summarizerForm" onsubmit="handleFormSubmit(event)">
                 <div class="form-group">
-                    <label class="label" for="theme">🔍 Thème à rechercher</label>
+                    <label class="label" for="theme">🔍 <span data-text-key="search_theme">Theme to search</span></label>
                     <input type="text" id="theme" class="input" 
-                           placeholder="Intelligence artificielle, Paris, Einstein..." required>
+                           data-placeholder-key="search_placeholder" required>
                     
                     <div class="suggestions">
-                        <span style="color: var(--text-secondary); font-size: 0.9rem;">💡 Suggestions populaires:</span>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">💡 <span data-text-key="popular_suggestions">Popular suggestions:</span></span>
                         <div class="suggestion-chips" id="suggestionChips"></div>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="label">📏 Longueur du résumé</label>
+                    <label class="label">📏 <span data-text-key="summary_length">Summary length</span></label>
                     <div class="length-selector">
                         <button type="button" class="length-btn" onclick="selectLength('court', this)">
-                            📝 Court<br><small>150-200 mots</small>
+                            📝 <span data-text-key="short">Short</span><br><small><span data-text-key="short_desc">150-200 words</span></small>
                         </button>
                         <button type="button" class="length-btn active" onclick="selectLength('moyen', this)">
-                            📄 Moyen<br><small>250-350 mots</small>
+                            📄 <span data-text-key="medium">Medium</span><br><small><span data-text-key="medium_desc">250-350 words</span></small>
                         </button>
                         <button type="button" class="length-btn" onclick="selectLength('long', this)">
-                            📚 Long<br><small>400-500 mots</small>
+                            📚 <span data-text-key="long">Long</span><br><small><span data-text-key="long_desc">400-500 words</span></small>
                         </button>
                     </div>
                 </div>
 
                 <div class="controls">
                     <button type="submit" class="btn btn-primary" id="generateBtn">
-                        ✨ Générer le résumé
+                        ✨ <span data-text-key="generate">Generate summary</span>
                     </button>
                     <button type="button" class="btn" onclick="clearAll()">
-                        🗑️ Effacer
+                        🗑️ <span data-text-key="clear">Clear</span>
                     </button>
                 </div>
             </form>
@@ -623,7 +752,7 @@ def index():
         <div id="status" class="status">
             <div class="status-text">
                 <span class="loading"></span>
-                <span id="statusText">Traitement en cours...</span>
+                <span id="statusText" data-text-key="processing">Processing...</span>
             </div>
             <div class="progress-bar">
                 <div id="progressFill" class="progress-fill"></div>
@@ -631,38 +760,275 @@ def index():
         </div>
 
         <div id="result" class="result">
-            <div class="result-title" id="resultTitle">📖 Résumé généré</div>
-            <div class="result-meta" id="resultMeta">Source: Wikipedia • 2.3s • Moyen</div>
+            <div class="result-header">
+                <div class="result-title" id="resultTitle">📖 <span data-text-key="generated_summary">Generated summary</span></div>
+                <button class="copy-btn" id="copyBtn" onclick="copyResult()" title="Copy to clipboard">
+                    📋
+                </button>
+            </div>
+            <div class="result-meta" id="resultMeta">Source: Wikipedia • 2.3s • Medium</div>
             <div class="result-content" id="resultContent"></div>
             <div id="resultUrl" class="result-url" style="display: none;">
-                <strong>🔗 Source Wikipedia:</strong><br>
+                <strong>🔗 <span data-text-key="wikipedia_source">Wikipedia Source:</span></strong><br>
                 <a href="#" target="_blank" id="wikiLink"></a>
             </div>
+        </div>
+    </div>
+
+    <!-- Author Modal -->
+    <div id="authorModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="hideAuthorModal()">×</button>
+            <h2 data-text-key="about_author">About the Author</h2>
+            <p data-text-key="author_intro">Hi! I'm Mydd, and I'm 16 years old.</p>
+            <p data-text-key="author_student">I'm still a student, passionate about technology and artificial intelligence.</p>
+            <p data-text-key="author_motivation">I created this project because I believe it's important to have reliable sources and that ideas should be well explained, without errors.</p>
+            <p data-text-key="author_mission">My goal is to make information more accessible to everyone through intelligent tools that combine the reliability of Wikipedia with the power of AI.</p>
+            <p data-text-key="author_thanks">Thank you for using Wikipedia Summarizer Pro!</p>
         </div>
     </div>
 
     <script>
         let isProcessing = false;
         let currentLength = 'moyen';
+        let currentLanguage = 'en';
+        let currentTheme = 'light';
         
-        const popularThemes = [
-            "Intelligence artificielle", "Réchauffement climatique", "Einstein",
-            "Révolution française", "Marie Curie", "Paris",
-            "Photosynthèse", "Bitcoin", "Système solaire"
-        ];
+        // Translations object
+        const translations = {
+            en: {
+                title: "Wikipedia Summarizer Pro",
+                subtitle: "Smart summaries with Mistral AI",
+                search_theme: "Theme to search",
+                search_placeholder: "Artificial intelligence, Paris, Einstein...",
+                popular_suggestions: "Popular suggestions:",
+                summary_length: "Summary length",
+                short: "Short",
+                medium: "Medium",
+                long: "Long",
+                short_desc: "150-200 words",
+                medium_desc: "250-350 words", 
+                long_desc: "400-500 words",
+                generate: "Generate summary",
+                clear: "Clear",
+                processing: "Processing...",
+                generated_summary: "Generated summary",
+                wikipedia_source: "Wikipedia Source:",
+                requests: "requests",
+                cached: "cached",
+                wikipedia: "Wikipedia",
+                ai_only: "AI only",
+                by_mydd: "by Mydd",
+                about_author: "About the Author",
+                author_intro: "Hi! I'm Mydd, and I'm 16 years old.",
+                author_student: "I'm still a student, passionate about technology and artificial intelligence.",
+                author_motivation: "I created this project because I believe it's important to have reliable sources and that ideas should be well explained, without errors.",
+                author_mission: "My goal is to make information more accessible to everyone through intelligent tools that combine the reliability of Wikipedia with the power of AI.",
+                author_thanks: "Thank you for using Wikipedia Summarizer Pro!",
+                searching: "Searching...",
+                generating: "Generating...",
+                completed: "Completed!",
+                copied: "Copied!",
+                copy_error: "Copy failed",
+                processing_theme: "Processing in progress...",
+                already_processing: "A process is already running...",
+                invalid_theme: "Please enter a valid theme (minimum 2 characters)",
+                summary_generated: "Summary generated!",
+                processing_error: "Processing error"
+            },
+            fr: {
+                title: "Wikipedia Summarizer Pro",
+                subtitle: "Résumés intelligents avec Mistral AI",
+                search_theme: "Thème à rechercher",
+                search_placeholder: "Intelligence artificielle, Paris, Einstein...",
+                popular_suggestions: "Suggestions populaires:",
+                summary_length: "Longueur du résumé",
+                short: "Court",
+                medium: "Moyen", 
+                long: "Long",
+                short_desc: "150-200 mots",
+                medium_desc: "250-350 mots",
+                long_desc: "400-500 mots",
+                generate: "Générer le résumé",
+                clear: "Effacer",
+                processing: "Traitement en cours...",
+                generated_summary: "Résumé généré",
+                wikipedia_source: "Source Wikipedia:",
+                requests: "requêtes",
+                cached: "en cache",
+                wikipedia: "Wikipedia",
+                ai_only: "IA seule",
+                by_mydd: "by Mydd",
+                about_author: "À propos de l'auteur",
+                author_intro: "Salut ! Je suis Mydd, et j'ai 16 ans.",
+                author_student: "Je suis encore étudiant, passionné par la technologie et l'intelligence artificielle.",
+                author_motivation: "J'ai créé ce projet parce que je pense qu'il est important d'avoir des sources fiables et que les idées soient bien expliquées, sans erreurs.",
+                author_mission: "Mon objectif est de rendre l'information plus accessible à tous grâce à des outils intelligents qui combinent la fiabilité de Wikipedia avec la puissance de l'IA.",
+                author_thanks: "Merci d'utiliser Wikipedia Summarizer Pro !",
+                searching: "Recherche en cours...",
+                generating: "Génération...",
+                completed: "Terminé !",
+                copied: "Copié !",
+                copy_error: "Échec de la copie",
+                processing_theme: "Traitement en cours...",
+                already_processing: "Un traitement est déjà en cours...",
+                invalid_theme: "Veuillez entrer un thème valide (minimum 2 caractères)",
+                summary_generated: "Résumé généré !",
+                processing_error: "Erreur de traitement"
+            },
+            es: {
+                title: "Wikipedia Summarizer Pro", 
+                subtitle: "Resúmenes inteligentes con Mistral AI",
+                search_theme: "Tema a buscar",
+                search_placeholder: "Inteligencia artificial, París, Einstein...",
+                popular_suggestions: "Sugerencias populares:",
+                summary_length: "Longitud del resumen",
+                short: "Corto",
+                medium: "Medio",
+                long: "Largo", 
+                short_desc: "150-200 palabras",
+                medium_desc: "250-350 palabras",
+                long_desc: "400-500 palabras",
+                generate: "Generar resumen",
+                clear: "Limpiar",
+                processing: "Procesando...",
+                generated_summary: "Resumen generado",
+                wikipedia_source: "Fuente Wikipedia:",
+                requests: "solicitudes",
+                cached: "en caché", 
+                wikipedia: "Wikipedia",
+                ai_only: "Solo IA",
+                by_mydd: "by Mydd",
+                about_author: "Acerca del Autor",
+                author_intro: "¡Hola! Soy Mydd, y tengo 16 años.",
+                author_student: "Todavía soy estudiante, apasionado por la tecnología y la inteligencia artificial.",
+                author_motivation: "Creé este proyecto porque creo que es importante tener fuentes confiables y que las ideas estén bien explicadas, sin errores.",
+                author_mission: "Mi objetivo es hacer la información más accesible para todos a través de herramientas inteligentes que combinan la confiabilidad de Wikipedia con el poder de la IA.",
+                author_thanks: "¡Gracias por usar Wikipedia Summarizer Pro!",
+                searching: "Buscando...",
+                generating: "Generando...",
+                completed: "¡Completado!",
+                copied: "¡Copiado!",
+                copy_error: "Error al copiar",
+                processing_theme: "Procesamiento en curso...",
+                already_processing: "Ya hay un proceso en ejecución...",
+                invalid_theme: "Por favor ingrese un tema válido (mínimo 2 caracteres)",
+                summary_generated: "¡Resumen generado!",
+                processing_error: "Error de procesamiento"
+            }
+        };
+
+        const popularThemes = {
+            en: ["Artificial Intelligence", "Climate Change", "Einstein", "French Revolution", "Marie Curie", "Paris", "Photosynthesis", "Bitcoin", "Solar System"],
+            fr: ["Intelligence artificielle", "Réchauffement climatique", "Einstein", "Révolution française", "Marie Curie", "Paris", "Photosynthèse", "Bitcoin", "Système solaire"],
+            es: ["Inteligencia Artificial", "Cambio Climático", "Einstein", "Revolución Francesa", "Marie Curie", "París", "Fotosíntesis", "Bitcoin", "Sistema Solar"]
+        };
 
         document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+
+        function initializeApp() {
+            loadTheme();
+            loadLanguage();
             initializeSuggestions();
             loadStats();
+            updateTranslations();
             const themeInput = document.getElementById('theme');
             if (themeInput) themeInput.focus();
-        });
+        }
+
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            currentTheme = savedTheme;
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeToggle();
+        }
+
+        function loadLanguage() {
+            const savedLanguage = localStorage.getItem('language') || 'en';
+            currentLanguage = savedLanguage;
+            document.getElementById('languageSelector').value = savedLanguage;
+            updateTranslations();
+        }
+
+        function toggleTheme() {
+            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', currentTheme);
+            localStorage.setItem('theme', currentTheme);
+            updateThemeToggle();
+        }
+
+        function updateThemeToggle() {
+            const toggle = document.getElementById('themeToggle');
+            if (toggle) {
+                toggle.textContent = currentTheme === 'light' ? '🌙' : '☀️';
+            }
+        }
+
+        function changeLanguage() {
+            const selector = document.getElementById('languageSelector');
+            currentLanguage = selector.value;
+            localStorage.setItem('language', currentLanguage);
+            updateTranslations();
+            initializeSuggestions();
+        }
+
+        function updateTranslations() {
+            const elements = document.querySelectorAll('[data-text-key]');
+            elements.forEach(element => {
+                const key = element.getAttribute('data-text-key');
+                if (translations[currentLanguage] && translations[currentLanguage][key]) {
+                    element.textContent = translations[currentLanguage][key];
+                }
+            });
+
+            // Update placeholder
+            const themeInput = document.getElementById('theme');
+            if (themeInput && translations[currentLanguage].search_placeholder) {
+                themeInput.placeholder = translations[currentLanguage].search_placeholder;
+            }
+        }
+
+        function showAuthorModal() {
+            document.getElementById('authorModal').classList.add('active');
+        }
+
+        function hideAuthorModal() {
+            document.getElementById('authorModal').classList.remove('active');
+        }
+
+        function copyResult() {
+            const content = document.getElementById('resultContent');
+            const copyBtn = document.getElementById('copyBtn');
+            
+            if (!content || !content.textContent) {
+                showNotification(translations[currentLanguage].copy_error, 'error');
+                return;
+            }
+
+            // Get text content without HTML
+            const textContent = content.textContent || content.innerText;
+            
+            navigator.clipboard.writeText(textContent).then(function() {
+                copyBtn.textContent = '✅';
+                copyBtn.classList.add('success');
+                showNotification(translations[currentLanguage].copied, 'success');
+                
+                setTimeout(() => {
+                    copyBtn.textContent = '📋';
+                    copyBtn.classList.remove('success');
+                }, 2000);
+            }).catch(function() {
+                showNotification(translations[currentLanguage].copy_error, 'error');
+            });
+        }
 
         function handleFormSubmit(event) {
             event.preventDefault();
             
             if (isProcessing) {
-                showNotification('Un traitement est déjà en cours...', 'info');
+                showNotification(translations[currentLanguage].already_processing, 'info');
                 return false;
             }
 
@@ -670,12 +1036,12 @@ def index():
             const theme = themeInput ? themeInput.value.trim() : '';
             
             if (!theme || theme.length < 2) {
-                showNotification('Veuillez entrer un thème valide (minimum 2 caractères)', 'error');
+                showNotification(translations[currentLanguage].invalid_theme, 'error');
                 if (themeInput) themeInput.focus();
                 return false;
             }
 
-            processTheme(theme, currentLength);
+            processTheme(theme, currentLength, currentLanguage);
             return false;
         }
 
@@ -689,7 +1055,9 @@ def index():
             const container = document.getElementById('suggestionChips');
             if (!container) return;
             
-            const shuffled = [...popularThemes].sort(() => 0.5 - Math.random()).slice(0, 6);
+            container.innerHTML = '';
+            const themes = popularThemes[currentLanguage] || popularThemes.en;
+            const shuffled = [...themes].sort(() => 0.5 - Math.random()).slice(0, 6);
             
             shuffled.forEach(theme => {
                 const chip = document.createElement('button');
@@ -715,7 +1083,7 @@ def index():
                     updateStatsDisplay(stats);
                 }
             } catch (error) {
-                console.log('Erreur stats:', error);
+                console.log('Stats error:', error);
             }
         }
 
@@ -733,26 +1101,28 @@ def index():
             if (elements.aiOnly) elements.aiOnly.textContent = stats.mistral_only || 0;
         }
 
-        async function processTheme(theme, lengthMode) {
+        async function processTheme(theme, lengthMode, language) {
             isProcessing = true;
             const generateBtn = document.getElementById('generateBtn');
+            const generateText = generateBtn.querySelector('[data-text-key="generate"]');
             
             if (generateBtn) {
                 generateBtn.disabled = true;
-                generateBtn.textContent = '⏳ Traitement...';
+                if (generateText) generateText.textContent = translations[currentLanguage].processing_theme;
             }
             
-            showStatus('🔍 Recherche en cours...');
+            showStatus(translations[currentLanguage].searching);
             hideResult();
 
             try {
                 const requestData = {
                     theme: theme,
-                    length_mode: lengthMode
+                    length_mode: lengthMode,
+                    language: language
                 };
                 
                 updateProgress(20);
-                updateStatus('🔍 Recherche Wikipedia...');
+                updateStatus(translations[currentLanguage].searching);
                 
                 const response = await fetch('/api/summarize', {
                     method: 'POST',
@@ -764,10 +1134,10 @@ def index():
                 });
 
                 updateProgress(60);
-                updateStatus('🤖 Génération...');
+                updateStatus(translations[currentLanguage].generating);
 
                 if (!response.ok) {
-                    let errorMessage = `Erreur HTTP ${response.status}`;
+                    let errorMessage = `HTTP Error ${response.status}`;
                     try {
                         const errorData = await response.json();
                         errorMessage = errorData.error || errorMessage;
@@ -781,28 +1151,28 @@ def index():
                 const data = await response.json();
 
                 if (!data.success) {
-                    throw new Error(data.error || 'Erreur inconnue');
+                    throw new Error(data.error || 'Unknown error');
                 }
 
                 updateProgress(100);
-                updateStatus('🎉 Terminé!');
+                updateStatus(translations[currentLanguage].completed);
                 await sleep(500);
 
                 showResult(data);
                 hideStatus();
                 
                 setTimeout(loadStats, 500);
-                showNotification('Résumé généré!', 'success');
+                showNotification(translations[currentLanguage].summary_generated, 'success');
 
             } catch (error) {
-                console.error('Erreur:', error);
-                showNotification(error.message || 'Erreur traitement', 'error');
+                console.error('Error:', error);
+                showNotification(error.message || translations[currentLanguage].processing_error, 'error');
                 hideStatus();
             } finally {
                 isProcessing = false;
-                if (generateBtn) {
+                if (generateBtn && generateText) {
                     generateBtn.disabled = false;
-                    generateBtn.textContent = '✨ Générer le résumé';
+                    generateText.textContent = translations[currentLanguage].generate;
                 }
             }
         }
@@ -840,17 +1210,22 @@ def index():
                 result: document.getElementById('result')
             };
             
-            if (elements.title) elements.title.textContent = data.title;
+            const titleSpan = elements.title ? elements.title.querySelector('[data-text-key="generated_summary"]') : null;
+            if (titleSpan) {
+                elements.title.innerHTML = '📖 <span data-text-key="generated_summary">' + translations[currentLanguage].generated_summary + '</span>';
+            }
             if (elements.content) elements.content.innerHTML = data.summary;
             
             const sourceIcon = data.source === 'wikipedia' ? '📖' : '🤖';
-            const sourceText = data.source === 'wikipedia' ? 'Wikipedia' : 'IA seule';
+            const sourceText = data.source === 'wikipedia' ? translations[currentLanguage].wikipedia : translations[currentLanguage].ai_only;
             let metaText = `${sourceIcon} ${sourceText} • ${data.processing_time}s • ${data.length_mode}`;
             
             if (data.method) metaText += ` • ${data.method}`;
             if (elements.meta) elements.meta.textContent = metaText;
             
             if (data.url && elements.url && elements.link) {
+                const sourceSpan = elements.url.querySelector('[data-text-key="wikipedia_source"]');
+                if (sourceSpan) sourceSpan.textContent = translations[currentLanguage].wikipedia_source;
                 elements.link.href = data.url;
                 elements.link.textContent = data.url;
                 elements.url.style.display = 'block';
@@ -876,9 +1251,10 @@ def index():
             hideResult();
             isProcessing = false;
             const generateBtn = document.getElementById('generateBtn');
+            const generateText = generateBtn ? generateBtn.querySelector('[data-text-key="generate"]') : null;
             if (generateBtn) {
                 generateBtn.disabled = false;
-                generateBtn.textContent = '✨ Générer le résumé';
+                if (generateText) generateText.textContent = translations[currentLanguage].generate;
             }
         }
 
@@ -901,7 +1277,7 @@ def index():
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        // Raccourcis clavier
+        // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
                 const target = e.target;
@@ -910,6 +1286,17 @@ def index():
                     handleFormSubmit(e);
                 }
             }
+            
+            if (e.key === 'Escape') {
+                hideAuthorModal();
+            }
+        });
+
+        // Click outside modal to close
+        document.getElementById('authorModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideAuthorModal();
+            }
         });
     </script>
 </body>
@@ -917,7 +1304,7 @@ def index():
 
 @app.route('/api/summarize', methods=['POST'])
 def summarize():
-    """API endpoint pour traiter les résumés"""
+    """API endpoint pour traiter les résumés avec support multilingue"""
     try:
         print("🚀 REQUÊTE /api/summarize")
         
@@ -931,13 +1318,14 @@ def summarize():
         
         theme = data.get('theme')
         length_mode = data.get('length_mode', 'moyen')
+        language = data.get('language', 'en')
         
         if not theme or not theme.strip():
             return jsonify({'success': False, 'error': 'Thème requis'}), 400
         
-        print(f"🚀 TRAITEMENT: '{theme}' ({length_mode})")
+        print(f"🚀 TRAITEMENT: '{theme}' ({length_mode}, {language})")
         
-        result = summarizer.process_theme(theme, length_mode)
+        result = summarizer.process_theme(theme, length_mode, language)
         
         if not result.get('success'):
             error_msg = result.get('error', 'Erreur inconnue')
@@ -966,7 +1354,7 @@ def health_check():
     return jsonify({'status': 'OK', 'service': 'Wikipedia Summarizer Pro'}), 200
 
 if __name__ == '__main__':
-    print("🌐 WIKIPEDIA SUMMARIZER PRO - VERSION FINALE")
+    print("🌐 WIKIPEDIA SUMMARIZER PRO - VERSION ENHANCED")
     print("="*60)
     
     try:
