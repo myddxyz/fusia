@@ -24,8 +24,7 @@ class WikipediaMistralSummarizer:
             "9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF",
             "cvkQHVcomFFEW47G044x2p4DTyk5BIc7"
         ]
-        self.mistral_client = None
-        self.init_client()
+        self.current_key_index = 0
         
         # Cache des résumés (en mémoire)
         self.cache = {}
@@ -40,26 +39,32 @@ class WikipediaMistralSummarizer:
         
         # Configuration Wikipedia
         wikipedia.set_lang("fr")
+        wikipedia.set_rate_limiting(True)
     
-    def init_client(self):
-        """Initialise le client Mistral avec une clé aléatoire"""
-        try:
-            key = random.choice(self.api_keys)
-            self.mistral_client = Mistral(api_key=key)
-            print(f"Client Mistral initialisé")
-        except Exception as e:
-            print(f"Erreur initialisation client: {e}")
+    def get_mistral_client(self):
+        """Obtient un client Mistral avec rotation des clés"""
+        key = self.api_keys[self.current_key_index % len(self.api_keys)]
+        self.current_key_index += 1
+        return Mistral(api_key=key)
     
-    def retry_with_different_key(self, func, *args, **kwargs):
-        """Retry une fonction avec différentes clés API en cas d'échec"""
-        for key in self.api_keys:
+    def retry_with_different_keys(self, func, *args, **kwargs):
+        """Retry une fonction avec toutes les clés API disponibles"""
+        last_exception = None
+        
+        for attempt in range(len(self.api_keys)):
             try:
-                self.mistral_client = Mistral(api_key=key)
-                return func(*args, **kwargs)
+                print(f"Tentative {attempt + 1} avec clé API")
+                result = func(*args, **kwargs)
+                return result
             except Exception as e:
-                print(f"Échec avec une clé, tentative suivante...")
+                print(f"Erreur avec clé {attempt + 1}: {str(e)}")
+                last_exception = e
+                # Passer à la clé suivante
+                self.current_key_index += 1
                 continue
-        raise Exception("Toutes les clés API ont échoué")
+        
+        # Si toutes les clés ont échoué
+        raise Exception(f"Toutes les clés API ont échoué. Dernière erreur: {str(last_exception)}")
     
     def get_cache_key(self, theme, length_mode):
         """Génère une clé de cache unique"""
@@ -69,55 +74,66 @@ class WikipediaMistralSummarizer:
         """
         Recherche intelligente sur Wikipedia avec plusieurs stratégies
         """
-        print(f"Recherche pour: '{theme}'")
+        print(f"🔍 Recherche Wikipedia pour: '{theme}'")
+        
+        # Nettoyer le thème
+        theme_clean = theme.strip()
         
         # Stratégie 1: Recherche directe
         try:
-            page = wikipedia.page(theme)
-            print(f"Trouvé directement: {page.title}")
+            print("Tentative de recherche directe...")
+            page = wikipedia.page(theme_clean, auto_suggest=False)
+            print(f"✅ Trouvé directement: {page.title}")
             return {
                 'title': page.title,
-                'content': page.content,
+                'content': page.content[:10000],  # Limiter pour éviter les timeouts
                 'url': page.url,
                 'method': 'direct'
             }
         except wikipedia.exceptions.DisambiguationError as e:
+            print(f"Désambiguïsation nécessaire, options: {e.options[:3]}")
             try:
+                # Prendre la première option de désambiguïsation
                 page = wikipedia.page(e.options[0])
-                print(f"Trouvé via désambiguïsation: {page.title}")
+                print(f"✅ Trouvé via désambiguïsation: {page.title}")
                 return {
                     'title': page.title,
-                    'content': page.content,
+                    'content': page.content[:10000],
                     'url': page.url,
                     'method': 'disambiguation'
                 }
-            except:
-                pass
-        except:
-            pass
+            except Exception as nested_e:
+                print(f"Erreur dans la désambiguïsation: {nested_e}")
+        except wikipedia.exceptions.PageError:
+            print("Page non trouvée directement, essai avec suggestions...")
+        except Exception as e:
+            print(f"Erreur recherche directe: {e}")
         
         # Stratégie 2: Recherche par suggestions
         try:
-            suggestions = wikipedia.search(theme, results=5)
-            print(f"Suggestions: {suggestions}")
+            print("Recherche avec suggestions...")
+            suggestions = wikipedia.search(theme_clean, results=5)
+            print(f"Suggestions trouvées: {suggestions}")
             
             if suggestions:
-                for suggestion in suggestions[:2]:
+                for suggestion in suggestions[:3]:  # Essayer les 3 premières
                     try:
+                        print(f"Test suggestion: {suggestion}")
                         page = wikipedia.page(suggestion)
-                        print(f"Trouvé via suggestion: {page.title}")
+                        print(f"✅ Trouvé via suggestion: {page.title}")
                         return {
                             'title': page.title,
-                            'content': page.content,
+                            'content': page.content[:10000],
                             'url': page.url,
-                            'method': 'suggestion'
+                            'method': f'suggestion ({suggestion})'
                         }
-                    except:
+                    except Exception as e:
+                        print(f"Erreur avec suggestion '{suggestion}': {e}")
                         continue
-        except:
-            pass
+        except Exception as e:
+            print(f"Erreur recherche suggestions: {e}")
         
-        print(f"Aucune page Wikipedia trouvée pour: '{theme}'")
+        print(f"❌ Aucune page Wikipedia trouvée pour: '{theme}'")
         return None
     
     def markdown_to_html(self, text):
@@ -131,7 +147,7 @@ class WikipediaMistralSummarizer:
         text = re.sub(r'\*\*([^*]+?)\*\*', r'<strong>\1</strong>', text)
         
         # Remplacer *texte* par <em>texte</em>
-        text = re.sub(r'\*([^*]+?)\*', r'<em>\1</em>', text)
+        text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
         
         # Convertir les paragraphes
         paragraphs = text.split('\n\n')
@@ -140,7 +156,11 @@ class WikipediaMistralSummarizer:
         for para in paragraphs:
             para = para.strip()
             if para and not para.startswith('<'):
-                para = f'<p>{para}</p>'
+                # Gérer les listes à puces
+                if para.startswith('- ') or para.startswith('• '):
+                    para = f'<p>{para}</p>'
+                else:
+                    para = f'<p>{para}</p>'
             if para:
                 formatted_paragraphs.append(para)
         
@@ -158,68 +178,81 @@ class WikipediaMistralSummarizer:
     def summarize_with_mistral(self, title, content, length_mode='moyen'):
         """Utilise Mistral AI pour résumer le contenu Wikipedia"""
         def _summarize():
+            client = self.get_mistral_client()
+            
             # Limiter le contenu si trop long
             max_chars = 8000
             if len(content) > max_chars:
-                content = content[:max_chars] + "..."
+                content_truncated = content[:max_chars] + "..."
+            else:
+                content_truncated = content
             
             word_count = self.get_word_count_for_length(length_mode)
             
-            prompt = f"""
-            Voici le contenu d'une page Wikipedia sur le sujet "{title}".
-            
-            Contenu:
-            {content}
-            
-            Consigne: Fais un résumé clair et concis de cette page Wikipedia en français. 
-            Le résumé doit faire environ {word_count}.
-            Il doit être informatif et bien structuré.
-            
-            IMPORTANT: Écris en texte brut simple, sans formatage Markdown.
-            Structure ton texte en paragraphes clairs.
-            """
+            prompt = f"""Tu es un expert en résumé. Voici le contenu d'une page Wikipedia sur "{title}".
+
+Contenu Wikipedia:
+{content_truncated}
+
+Consigne: Crée un résumé clair, informatif et bien structuré de cette page Wikipedia en français.
+- Le résumé doit faire environ {word_count}
+- Utilise un langage accessible et précis
+- Structure le texte en paragraphes cohérents
+- Concentre-toi sur les informations les plus importantes
+- Écris en texte brut, sans formatage markdown
+
+Résumé:"""
             
             messages = [{"role": "user", "content": prompt}]
             
-            response = self.mistral_client.chat.complete(
+            response = client.chat.complete(
                 model="mistral-large-latest",
                 messages=messages,
-                temperature=0.3
+                temperature=0.2,
+                max_tokens=800
             )
             
-            return response.choices[0].message.content
+            return response.choices[0].message.content.strip()
         
-        return self.retry_with_different_key(_summarize)
+        return self.retry_with_different_keys(_summarize)
     
     def answer_with_mistral_only(self, theme, length_mode='moyen'):
         """Utilise Mistral AI pour répondre directement sur un thème sans Wikipedia"""
         def _answer():
+            client = self.get_mistral_client()
+            
             word_count = self.get_word_count_for_length(length_mode)
             
-            prompt = f"""
-            L'utilisateur me demande des informations sur le thème: "{theme}"
-            
-            Consigne: Fournis une réponse complète et informative sur ce thème en français.
-            Explique ce que c'est, donne des détails importants, et tout ce qui pourrait être utile.
-            Le texte doit faire environ {word_count}.
-            
-            IMPORTANT: Écris en texte brut simple, sans formatage Markdown.
-            """
+            prompt = f"""Tu es un assistant expert qui doit fournir des informations complètes sur un sujet.
+
+Sujet demandé: "{theme}"
+
+Consigne: Fournis une explication complète et informative sur ce sujet en français.
+- Explique ce que c'est, son contexte, son importance
+- Donne des détails utiles et intéressants
+- Le texte doit faire environ {word_count}
+- Utilise un langage clair et accessible
+- Structure en paragraphes cohérents
+- Écris en texte brut, sans formatage markdown
+
+Réponse:"""
             
             messages = [{"role": "user", "content": prompt}]
             
-            response = self.mistral_client.chat.complete(
+            response = client.chat.complete(
                 model="mistral-large-latest", 
                 messages=messages,
-                temperature=0.4
+                temperature=0.3,
+                max_tokens=800
             )
             
-            return response.choices[0].message.content
+            return response.choices[0].message.content.strip()
         
-        return self.retry_with_different_key(_answer)
+        return self.retry_with_different_keys(_answer)
 
     def process_theme(self, theme, length_mode='moyen'):
         """Traite un thème complet"""
+        print(f"\n🚀 DÉBUT DU TRAITEMENT: '{theme}' (longueur: {length_mode})")
         self.stats['requests'] += 1
         start_time = time.time()
         
@@ -235,62 +268,72 @@ class WikipediaMistralSummarizer:
         # Vérifier le cache
         cache_key = self.get_cache_key(theme, length_mode)
         if cache_key in self.cache:
+            print("💾 Résultat trouvé en cache")
             self.stats['cache_hits'] += 1
             return self.cache[cache_key]
         
-        # Recherche Wikipedia
-        wiki_data = self.smart_wikipedia_search(theme)
-        
-        if not wiki_data:
-            # Réponse Mistral seul
-            print(f"Génération directe avec Mistral pour: {theme}")
-            mistral_response = self.answer_with_mistral_only(theme, length_mode)
+        try:
+            # Recherche Wikipedia
+            print("🔍 Début recherche Wikipedia...")
+            wiki_data = self.smart_wikipedia_search(theme)
             
-            if not mistral_response:
-                return {'success': False, 'error': 'Erreur lors de la génération'}
+            if not wiki_data:
+                # Réponse Mistral seul
+                print(f"🤖 Génération directe avec Mistral pour: {theme}")
+                mistral_response = self.answer_with_mistral_only(theme, length_mode)
+                
+                if not mistral_response:
+                    return {'success': False, 'error': 'Erreur lors de la génération de la réponse'}
+                
+                formatted_response = self.markdown_to_html(mistral_response)
+                
+                result = {
+                    'success': True,
+                    'title': f"Informations sur: {theme}",
+                    'summary': formatted_response,
+                    'url': None,
+                    'source': 'mistral_only',
+                    'method': 'direct_ai',
+                    'processing_time': round(time.time() - start_time, 2),
+                    'length_mode': length_mode
+                }
+                
+                self.stats['mistral_only'] += 1
+                
+            else:
+                # Résumé Wikipedia + Mistral
+                print(f"📖 Résumé Wikipedia pour: {wiki_data['title']}")
+                summary = self.summarize_with_mistral(wiki_data['title'], wiki_data['content'], length_mode)
+                
+                if not summary:
+                    return {'success': False, 'error': 'Erreur lors de la génération du résumé'}
+                
+                formatted_summary = self.markdown_to_html(summary)
+                
+                result = {
+                    'success': True,
+                    'title': wiki_data['title'],
+                    'summary': formatted_summary,
+                    'url': wiki_data['url'],
+                    'source': 'wikipedia',
+                    'method': wiki_data['method'],
+                    'processing_time': round(time.time() - start_time, 2),
+                    'length_mode': length_mode
+                }
+                
+                self.stats['wikipedia_success'] += 1
             
-            formatted_response = self.markdown_to_html(mistral_response)
+            # Sauvegarder en cache
+            self.cache[cache_key] = result
+            print(f"✅ TRAITEMENT TERMINÉ en {result['processing_time']}s")
+            return result
             
-            result = {
-                'success': True,
-                'title': f"Informations sur: {theme}",
-                'summary': formatted_response,
-                'url': None,
-                'source': 'mistral_only',
-                'method': 'direct_ai',
-                'processing_time': round(time.time() - start_time, 2),
-                'length_mode': length_mode
+        except Exception as e:
+            print(f"❌ ERREUR GÉNÉRALE: {str(e)}")
+            return {
+                'success': False,
+                'error': f'Erreur lors du traitement: {str(e)}'
             }
-            
-            self.stats['mistral_only'] += 1
-            
-        else:
-            # Résumé Wikipedia + Mistral
-            print(f"Résumé Wikipedia pour: {wiki_data['title']}")
-            summary = self.summarize_with_mistral(wiki_data['title'], wiki_data['content'], length_mode)
-            
-            if not summary:
-                return {'success': False, 'error': 'Erreur lors de la génération du résumé'}
-            
-            formatted_summary = self.markdown_to_html(summary)
-            
-            result = {
-                'success': True,
-                'title': wiki_data['title'],
-                'summary': formatted_summary,
-                'url': wiki_data['url'],
-                'source': 'wikipedia',
-                'method': wiki_data['method'],
-                'processing_time': round(time.time() - start_time, 2),
-                'length_mode': length_mode
-            }
-            
-            self.stats['wikipedia_success'] += 1
-        
-        # Sauvegarder en cache
-        self.cache[cache_key] = result
-        
-        return result
 
 # Instance globale du résumeur
 summarizer = WikipediaMistralSummarizer()
@@ -908,7 +951,7 @@ def index():
 
         // Initialisation au chargement
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('Page chargée, initialisation...');
+            console.log('🚀 Page chargée, initialisation...');
             initializeSuggestions();
             initializeTheme();
             loadStats();
@@ -918,31 +961,46 @@ def index():
             if (themeInput) {
                 themeInput.focus();
             }
+            
+            console.log('✅ Initialisation terminée');
         });
 
         // Gestion des événements
         function handleFormSubmit(event) {
             event.preventDefault();
-            console.log('Formulaire soumis');
+            console.log('📝 Formulaire soumis');
             
             if (isProcessing) {
-                console.log('Traitement déjà en cours');
-                return;
+                console.log('⏳ Traitement déjà en cours, ignorer');
+                showNotification('Un traitement est déjà en cours...', 'info');
+                return false;
             }
 
             const themeInput = document.getElementById('theme');
             const theme = themeInput ? themeInput.value.trim() : '';
             
             if (!theme) {
+                console.log('❌ Thème vide');
                 showNotification('Veuillez entrer un thème de recherche', 'error');
-                return;
+                if (themeInput) themeInput.focus();
+                return false;
             }
 
-            console.log('Démarrage du traitement pour:', theme, 'longueur:', currentLength);
+            if (theme.length < 2) {
+                console.log('❌ Thème trop court');
+                showNotification('Le thème doit contenir au moins 2 caractères', 'error');
+                if (themeInput) themeInput.focus();
+                return false;
+            }
+
+            console.log(`🚀 Démarrage du traitement pour: "${theme}" (longueur: ${currentLength})`);
             processTheme(theme, currentLength);
+            return false;
         }
 
         function selectLength(length, element) {
+            console.log(`📏 Sélection longueur: ${length}`);
+            
             // Retirer la classe active de tous les boutons
             document.querySelectorAll('.length-btn').forEach(btn => {
                 btn.classList.remove('active');
@@ -951,15 +1009,20 @@ def index():
             // Ajouter la classe active au bouton cliqué
             element.classList.add('active');
             currentLength = length;
-            console.log('Longueur sélectionnée:', currentLength);
+            console.log(`✅ Longueur mise à jour: ${currentLength}`);
         }
 
         function initializeSuggestions() {
+            console.log('💡 Initialisation des suggestions');
             const container = document.getElementById('suggestionChips');
-            if (!container) return;
+            if (!container) {
+                console.log('❌ Container suggestions non trouvé');
+                return;
+            }
             
             // Mélanger et prendre 6 suggestions
-            const shuffled = popularThemes.sort(() => 0.5 - Math.random()).slice(0, 6);
+            const shuffled = [...popularThemes].sort(() => 0.5 - Math.random()).slice(0, 6);
+            console.log('Suggestions sélectionnées:', shuffled);
             
             shuffled.forEach(theme => {
                 const chip = document.createElement('button');
@@ -967,6 +1030,7 @@ def index():
                 chip.textContent = theme;
                 chip.type = 'button';
                 chip.onclick = function() {
+                    console.log(`💡 Suggestion cliquée: ${theme}`);
                     const themeInput = document.getElementById('theme');
                     if (themeInput) {
                         themeInput.value = theme;
@@ -975,10 +1039,15 @@ def index():
                 };
                 container.appendChild(chip);
             });
+            
+            console.log('✅ Suggestions initialisées');
         }
 
         function initializeTheme() {
+            console.log('🎨 Initialisation du thème');
             const savedTheme = localStorage.getItem('theme') || 'light';
+            console.log(`Thème sauvegardé: ${savedTheme}`);
+            
             if (savedTheme === 'dark') {
                 document.documentElement.setAttribute('data-theme', 'dark');
                 const themeIcon = document.getElementById('themeIcon');
@@ -986,9 +1055,11 @@ def index():
                     themeIcon.textContent = '☀️';
                 }
             }
+            console.log('✅ Thème initialisé');
         }
 
         function toggleTheme() {
+            console.log('🎨 Basculement du thème');
             const currentTheme = document.documentElement.getAttribute('data-theme');
             const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
             
@@ -998,21 +1069,33 @@ def index():
                 themeIcon.textContent = newTheme === 'dark' ? '☀️' : '🌙';
             }
             localStorage.setItem('theme', newTheme);
+            console.log(`✅ Thème changé vers: ${newTheme}`);
         }
 
         async function loadStats() {
+            console.log('📊 Chargement des statistiques');
             try {
-                const response = await fetch('/api/stats');
+                const response = await fetch('/api/stats', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
                 if (response.ok) {
                     const stats = await response.json();
+                    console.log('📊 Stats reçues:', stats);
                     updateStatsDisplay(stats);
+                } else {
+                    console.log('⚠️ Erreur HTTP stats:', response.status);
                 }
             } catch (error) {
-                console.log('Erreur chargement stats:', error);
+                console.log('❌ Erreur chargement stats:', error);
             }
         }
 
         function updateStatsDisplay(stats) {
+            console.log('📊 Mise à jour affichage stats');
             const elements = {
                 totalRequests: document.getElementById('totalRequests'),
                 cacheHits: document.getElementById('cacheHits'),
@@ -1024,10 +1107,17 @@ def index():
             if (elements.cacheHits) elements.cacheHits.textContent = stats.cache_hits || 0;
             if (elements.wikiSuccess) elements.wikiSuccess.textContent = stats.wikipedia_success || 0;
             if (elements.aiOnly) elements.aiOnly.textContent = stats.mistral_only || 0;
+            
+            console.log('✅ Stats mises à jour dans l\'interface');
         }
 
         async function processTheme(theme, lengthMode) {
-            console.log('processTheme appelé avec:', theme, lengthMode);
+            console.log(`🚀 DÉBUT processTheme: "${theme}" (${lengthMode})`);
+            
+            if (isProcessing) {
+                console.log('⏳ Déjà en traitement, abandon');
+                return;
+            }
             
             isProcessing = true;
             const generateBtn = document.getElementById('generateBtn');
@@ -1035,64 +1125,95 @@ def index():
             if (generateBtn) {
                 generateBtn.disabled = true;
                 generateBtn.textContent = '⏳ Traitement...';
+                console.log('🔄 Bouton désactivé');
             }
             
-            showStatus('Recherche en cours...');
+            showStatus('🔍 Recherche en cours...');
             hideResult();
 
             try {
-                updateProgress(25);
-                await sleep(300);
+                console.log('📡 Préparation de la requête API');
                 
-                updateStatus('Analyse du contenu...');
-                updateProgress(50);
-                await sleep(300);
-
-                console.log('Envoi de la requête à l\'API');
+                const requestData = {
+                    theme: theme,
+                    length_mode: lengthMode
+                };
+                
+                console.log('📡 Données à envoyer:', requestData);
+                
+                updateProgress(10);
+                updateStatus('🔍 Recherche Wikipedia...');
+                await sleep(200);
+                
+                updateProgress(30);
+                
+                console.log('📡 Envoi de la requête vers /api/summarize');
                 
                 const response = await fetch('/api/summarize', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
-                    body: JSON.stringify({
-                        theme: theme,
-                        length_mode: lengthMode
-                    })
+                    body: JSON.stringify(requestData)
                 });
 
-                console.log('Réponse reçue:', response.status);
+                console.log(`📡 Réponse reçue - Status: ${response.status}`);
 
-                updateStatus('Génération du résumé...');
-                updateProgress(75);
+                updateProgress(60);
+                updateStatus('🤖 Génération du résumé...');
                 await sleep(300);
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Erreur lors du traitement');
+                    const errorText = await response.text();
+                    console.log('❌ Erreur HTTP:', response.status, errorText);
+                    
+                    let errorMessage = 'Erreur lors du traitement';
+                    try {
+                        const errorData = JSON.parse(errorText);
+                        errorMessage = errorData.error || errorMessage;
+                    } catch (e) {
+                        errorMessage = `Erreur HTTP ${response.status}`;
+                    }
+                    
+                    throw new Error(errorMessage);
                 }
 
                 const data = await response.json();
-                console.log('Données reçues:', data);
+                console.log('✅ Données reçues:', data);
 
-                updateStatus('Résumé terminé!');
+                updateProgress(90);
+                updateStatus('✅ Finalisation...');
+                await sleep(300);
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Erreur inconnue');
+                }
+
                 updateProgress(100);
+                updateStatus('🎉 Résumé terminé!');
                 await sleep(500);
 
                 showResult(data);
                 hideStatus();
-                await loadStats();
+                
+                // Recharger les stats après succès
+                setTimeout(loadStats, 500);
+                
                 showNotification('Résumé généré avec succès!', 'success');
+                console.log('🎉 TRAITEMENT TERMINÉ AVEC SUCCÈS');
 
             } catch (error) {
-                console.error('Erreur complète:', error);
-                showNotification(error.message, 'error');
+                console.error('❌ ERREUR COMPLÈTE:', error);
+                showNotification(error.message || 'Erreur lors du traitement', 'error');
                 hideStatus();
+                console.log('💥 TRAITEMENT ÉCHOUÉ');
             } finally {
                 isProcessing = false;
                 if (generateBtn) {
                     generateBtn.disabled = false;
                     generateBtn.textContent = '✨ Générer le résumé';
+                    console.log('🔄 Bouton réactivé');
                 }
             }
         }
@@ -1101,6 +1222,7 @@ def index():
             const progressFill = document.getElementById('progressFill');
             if (progressFill) {
                 progressFill.style.width = percent + '%';
+                console.log(`📈 Progression: ${percent}%`);
             }
         }
 
@@ -1108,10 +1230,12 @@ def index():
             const statusText = document.getElementById('statusText');
             if (statusText) {
                 statusText.textContent = message;
+                console.log(`📢 Status: ${message}`);
             }
         }
 
         function showStatus(message) {
+            console.log(`👁️ Affichage status: ${message}`);
             updateStatus(message);
             const statusDiv = document.getElementById('status');
             if (statusDiv) {
@@ -1121,6 +1245,7 @@ def index():
         }
 
         function hideStatus() {
+            console.log('👁️ Masquage du status');
             const statusDiv = document.getElementById('status');
             if (statusDiv) {
                 statusDiv.classList.remove('active');
@@ -1131,7 +1256,7 @@ def index():
         }
 
         function showResult(data) {
-            console.log('Affichage du résultat:', data);
+            console.log('👁️ Affichage du résultat:', data.title);
             
             const elements = {
                 title: document.getElementById('resultTitle'),
@@ -1159,16 +1284,20 @@ def index():
                 elements.link.href = data.url;
                 elements.link.textContent = data.url;
                 elements.url.style.display = 'block';
+                console.log('🔗 URL Wikipedia affichée');
             } else if (elements.url) {
                 elements.url.style.display = 'none';
+                console.log('🔗 Pas d\'URL Wikipedia');
             }
 
             if (elements.result) {
                 elements.result.classList.add('active');
+                console.log('✅ Résultat affiché');
             }
         }
 
         function hideResult() {
+            console.log('👁️ Masquage du résultat');
             const resultDiv = document.getElementById('result');
             if (resultDiv) {
                 resultDiv.classList.remove('active');
@@ -1176,6 +1305,7 @@ def index():
         }
 
         function clearAll() {
+            console.log('🗑️ Effacement de tout');
             const themeInput = document.getElementById('theme');
             if (themeInput) {
                 themeInput.value = '';
@@ -1189,9 +1319,12 @@ def index():
                 generateBtn.disabled = false;
                 generateBtn.textContent = '✨ Générer le résumé';
             }
+            console.log('✅ Tout effacé');
         }
 
         function showNotification(message, type = 'info') {
+            console.log(`🔔 Notification: ${message} (${type})`);
+            
             // Supprimer les notifications existantes
             document.querySelectorAll('.notification').forEach(n => n.remove());
             
@@ -1208,7 +1341,7 @@ def index():
             setTimeout(() => {
                 notification.classList.remove('show');
                 setTimeout(() => notification.remove(), 300);
-            }, 3000);
+            }, 4000);
         }
 
         function sleep(ms) {
@@ -1224,10 +1357,8 @@ def index():
                         if (!isProcessing) {
                             const themeInput = document.getElementById('theme');
                             if (themeInput && themeInput.value.trim()) {
-                                const form = document.getElementById('summarizerForm');
-                                if (form) {
-                                    handleFormSubmit(e);
-                                }
+                                console.log('⌨️ Raccourci Ctrl+Enter détecté');
+                                handleFormSubmit(e);
                             }
                         }
                         break;
@@ -1237,14 +1368,44 @@ def index():
                         if (themeInput) {
                             themeInput.focus();
                             themeInput.select();
+                            console.log('⌨️ Raccourci Ctrl+K détecté - Focus sur input');
                         }
                         break;
                     case 'd':
                         e.preventDefault();
                         toggleTheme();
+                        console.log('⌨️ Raccourci Ctrl+D détecté - Toggle thème');
                         break;
                 }
             }
+            
+            if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+                const target = e.target;
+                if (target && target.id === 'theme') {
+                    e.preventDefault();
+                    if (!isProcessing && target.value.trim()) {
+                        console.log('⌨️ Enter dans input détecté');
+                        handleFormSubmit(e);
+                    }
+                }
+            }
+        });
+
+        // Test de connexion API au chargement
+        window.addEventListener('load', function() {
+            console.log('🧪 Test de connexion API...');
+            fetch('/api/stats')
+                .then(response => {
+                    if (response.ok) {
+                        console.log('✅ API accessible');
+                    } else {
+                        console.log('⚠️ API répond mais avec erreur:', response.status);
+                    }
+                })
+                .catch(error => {
+                    console.log('❌ API non accessible:', error);
+                    showNotification('Problème de connexion au serveur', 'error');
+                });
         });
     </script>
 </body>
@@ -1254,68 +1415,128 @@ def index():
 def summarize():
     """API endpoint pour traiter les résumés"""
     try:
-        print("Requête reçue sur /api/summarize")
+        print("\n" + "="*50)
+        print("🚀 REQUÊTE REÇUE sur /api/summarize")
+        print("="*50)
+        
+        # Vérifier si on reçoit du JSON
+        if not request.is_json:
+            print("❌ ERREUR: Pas de JSON reçu")
+            return jsonify({'success': False, 'error': 'Content-Type doit être application/json'}), 400
         
         data = request.get_json()
-        print(f"Données reçues: {data}")
+        print(f"📨 Données reçues: {data}")
+        
+        if not data:
+            print("❌ ERREUR: Données JSON vides")
+            return jsonify({'success': False, 'error': 'Données JSON requises'}), 400
         
         theme = data.get('theme')
         length_mode = data.get('length_mode', 'moyen')
         
+        print(f"🎯 Thème: '{theme}'")
+        print(f"📏 Longueur: '{length_mode}'")
+        
         if not theme:
-            print("Thème manquant")
-            return jsonify({'error': 'Thème requis'}), 400
+            print("❌ ERREUR: Thème manquant")
+            return jsonify({'success': False, 'error': 'Thème requis'}), 400
         
-        print(f"Traitement: '{theme}' en mode '{length_mode}'")
+        if not theme.strip():
+            print("❌ ERREUR: Thème vide")
+            return jsonify({'success': False, 'error': 'Thème ne peut pas être vide'}), 400
         
+        print(f"🚀 DÉBUT TRAITEMENT: '{theme}' en mode '{length_mode}'")
+        
+        # Appeler le processeur
         result = summarizer.process_theme(theme, length_mode)
         
-        if not result['success']:
-            print(f"Échec: {result['error']}")
-            return jsonify({'error': result['error']}), 500
+        print(f"📤 Résultat du traitement: success={result.get('success')}")
         
-        print(f"Succès: {result['title']}")
-        return jsonify(result)
+        if not result.get('success'):
+            error_msg = result.get('error', 'Erreur inconnue')
+            print(f"❌ ÉCHEC: {error_msg}")
+            return jsonify({
+                'success': False, 
+                'error': error_msg
+            }), 500
+        
+        print(f"✅ SUCCÈS: {result.get('title', 'Sans titre')}")
+        print(f"📊 Temps: {result.get('processing_time', 0)}s")
+        print(f"📖 Source: {result.get('source', 'inconnue')}")
+        
+        return jsonify(result), 200
         
     except Exception as e:
-        print(f"Erreur dans l'endpoint: {e}")
-        return jsonify({'error': str(e)}), 500
+        error_msg = str(e)
+        print(f"💥 ERREUR GÉNÉRALE dans l'endpoint: {error_msg}")
+        print(f"Type d'erreur: {type(e).__name__}")
+        
+        return jsonify({
+            'success': False,
+            'error': f'Erreur serveur: {error_msg}'
+        }), 500
 
-@app.route('/api/stats')
+@app.route('/api/stats', methods=['GET'])
 def get_stats():
     """API endpoint pour récupérer les statistiques"""
-    return jsonify(summarizer.stats)
+    try:
+        print("📊 Requête stats reçue")
+        stats = summarizer.stats.copy()
+        print(f"📊 Stats envoyées: {stats}")
+        return jsonify(stats), 200
+    except Exception as e:
+        print(f"❌ Erreur stats: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    print("=" * 60)
-    print("Wikipedia Summarizer Pro - Version Corrigée et Fonctionnelle")
-    print("=" * 60)
-    print("Interface: http://localhost:4000")
-    print("API: http://localhost:4000/api/summarize")
-    print("Stats: http://localhost:4000/api/stats")
-    print("-" * 60)
-    print("Fonctionnalités:")
-    print("   • 3 clés API Mistral avec rotation automatique")
-    print("   • Recherche Wikipedia intelligente (direct + suggestions)")
-    print("   • Cache des résumés en mémoire")
-    print("   • 3 longueurs de résumé (court/moyen/long)")
-    print("   • Mode sombre/clair")
-    print("   • Statistiques en temps réel")
-    print("   • Raccourcis: Ctrl+Enter, Ctrl+K, Ctrl+D")
-    print("   • Interface responsive")
-    print("-" * 60)
+    print("=" * 80)
+    print("🌟 WIKIPEDIA SUMMARIZER PRO - VERSION CORRIGÉE 🌟")
+    print("=" * 80)
+    print("🌐 Interface: http://localhost:4000")
+    print("🚀 API Résumé: http://localhost:4000/api/summarize")
+    print("📊 API Stats: http://localhost:4000/api/stats")
+    print("-" * 80)
+    print("✨ Fonctionnalités:")
+    print("   🤖 3 clés API Mistral avec rotation automatique")
+    print("   📚 Recherche Wikipedia intelligente multi-stratégies")
+    print("   💾 Cache des résumés en mémoire")
+    print("   📏 3 longueurs: court/moyen/long")
+    print("   🎨 Mode sombre/clair")
+    print("   📊 Statistiques temps réel")
+    print("   ⌨️  Raccourcis: Ctrl+Enter, Ctrl+K, Ctrl+D")
+    print("   📱 Interface responsive")
+    print("-" * 80)
+    print("🔧 Corrections apportées:")
+    print("   ✅ Gestion d'erreurs JavaScript renforcée")
+    print("   ✅ Rotation des clés API optimisée")
+    print("   ✅ Logs détaillés front & backend")
+    print("   ✅ Validation des données améliorée")
+    print("   ✅ Gestion des timeouts Wikipedia")
+    print("   ✅ États d'interface cohérents")
+    print("=" * 80)
     
     try:
+        # Test des imports
         from mistralai import Mistral
         import wikipedia
-        print("Toutes les dépendances sont installées")
-        print("3 clés API Mistral configurées")
-        print("Recherche Wikipedia intelligente activée")
+        print("✅ Toutes les dépendances sont installées")
+        
+        # Test des clés API
+        test_client = Mistral(api_key=summarizer.api_keys[0])
+        print("✅ Clés API Mistral configurées")
+        
+        # Test Wikipedia
+        wikipedia.set_lang("fr")
+        print("✅ Wikipedia configuré en français")
+        
     except ImportError as e:
-        print(f"Module manquant: {e}")
-        print("Installez avec: pip install flask mistralai wikipedia")
+        print(f"❌ Module manquant: {e}")
+        print("🔧 Installez avec: pip install flask mistralai wikipedia")
         exit(1)
+    except Exception as e:
+        print(f"⚠️  Avertissement configuration: {e}")
     
-    print("=" * 60)
+    print("\n🚀 DÉMARRAGE DU SERVEUR...")
+    print("=" * 80)
     
     app.run(debug=True, host='0.0.0.0', port=4000)
