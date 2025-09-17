@@ -7,10 +7,10 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-# Ajouter le dossier summarizer au path pour pouvoir importer l'app
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'summarizer'))
+# Ajouter le dossier wiki au path pour pouvoir importer l'app
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'wiki'))
 
-# Importer l'app du summarizer
+# Importer l'app du wiki summarizer
 try:
     from app import app as summarizer_app, summarizer
     print("✅ App Wikisummarizer importée avec succès")
@@ -26,9 +26,18 @@ def hub():
 
 @app.route('/wikisummarizer')
 def wikisummarizer():
-    """Servir l'interface Wikisummarizer directement"""
-    # Solution simple : on récupère le HTML directement du code source
-    html_interface = '''<!DOCTYPE html>
+    """Servir l'interface Wikisummarizer complète"""
+    if summarizer_app:
+        # Si l'app wiki est disponible, servir son interface
+        try:
+            # Chercher le fichier index.html dans le dossier wiki
+            return send_from_directory('wiki', 'index.html')
+        except:
+            # Si pas de fichier HTML, utiliser l'interface de l'app importée
+            return summarizer_app.view_functions['index']() if 'index' in summarizer_app.view_functions else redirect('/')
+    else:
+        # Interface de fallback si l'import a échoué
+        html_interface = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -75,6 +84,8 @@ def wikisummarizer():
             padding: 30px; background: var(--bg-primary); border-radius: 20px;
             box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
         }
+        
+        .error { color: #e74c3c; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -82,15 +93,13 @@ def wikisummarizer():
     <div class="container">
         <h1>Wikipedia Summarizer Pro</h1>
         <div class="message">
-            <p>L'interface complète de Wikisummarizer sera bientôt intégrée ici.</p>
-            <p>En attendant, l'API fonctionne parfaitement pour les résumés intelligents.</p>
+            <p class="error">❌ Erreur de chargement du module Wiki Summarizer</p>
+            <p>Vérifiez que le dossier 'wiki' contient bien l'application avec app.py</p>
         </div>
     </div>
 </body>
 </html>'''
-    return html_interface
-
-# Supprimer l'ancienne route wikisummarizer-interface qui posait problème
+        return html_interface
 
 # Routes API du Wikisummarizer
 @app.route('/api/summarize', methods=['POST'])
@@ -109,7 +118,13 @@ def api_stats():
     else:
         return jsonify({'error': 'Wikisummarizer non disponible'}), 500
 
-# Routes pour servir les fichiers statiques (si besoin)
+# Routes pour servir les fichiers statiques du wiki
+@app.route('/wiki/<path:filename>')
+def serve_wiki_static(filename):
+    """Servir les fichiers statiques du dossier wiki"""
+    return send_from_directory('wiki', filename)
+
+# Routes pour servir les fichiers statiques généraux
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     """Servir les fichiers statiques"""
