@@ -1,12 +1,3 @@
-@app.route('/')
-def hub():
-    return send_file('../index.html')
-
-@app.route('/wiki')
-@app.route('/wiki/')
-def wiki_summarizer():
-    # Le code actuel de ta page principale wiki
-    # (renomme l'ancienne route '/' en '/wiki')
 from flask import Flask, request, jsonify
 import requests
 import json
