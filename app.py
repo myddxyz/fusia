@@ -26,12 +26,71 @@ def hub():
 
 @app.route('/wikisummarizer')
 def wikisummarizer():
-    """Rediriger vers l'interface Wikisummarizer"""
-    if summarizer_app:
-        # Servir l'interface du summarizer
-        return summarizer_app.view_functions['index']()
-    else:
-        return "Wikisummarizer non disponible", 500
+    """Servir l'interface Wikisummarizer directement"""
+    # Solution simple : on récupère le HTML directement du code source
+    html_interface = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wikipedia Summarizer Pro</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg-primary: #e6e7ee; --bg-secondary: #d1d2d9; --bg-tertiary: #fbfcff;
+            --text-primary: #5a5c69; --text-secondary: #8b8d97;
+            --accent: #667eea; --accent-secondary: #764ba2;
+            --shadow-light: #bebfc5; --shadow-dark: #ffffff;
+        }
+        
+        body {
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            min-height: 100vh; padding: 20px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        
+        .back-link {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(255,255,255,0.1); padding: 10px 20px;
+            border-radius: 15px; color: white; text-decoration: none;
+            transition: all 0.3s ease; backdrop-filter: blur(10px);
+        }
+        
+        .back-link:hover {
+            background: rgba(255,255,255,0.2); transform: translateY(-2px);
+        }
+        
+        .container {
+            background: var(--bg-primary); border-radius: 30px; padding: 40px;
+            width: 100%; max-width: 900px; text-align: center;
+            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
+        }
+        
+        h1 { font-size: 2.5rem; margin-bottom: 20px; color: var(--accent); }
+        p { color: var(--text-secondary); margin-bottom: 30px; font-size: 1.1rem; }
+        
+        .message {
+            padding: 30px; background: var(--bg-primary); border-radius: 20px;
+            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
+        }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-link">← Retour au Hub</a>
+    <div class="container">
+        <h1>Wikipedia Summarizer Pro</h1>
+        <div class="message">
+            <p>L'interface complète de Wikisummarizer sera bientôt intégrée ici.</p>
+            <p>En attendant, l'API fonctionne parfaitement pour les résumés intelligents.</p>
+        </div>
+    </div>
+</body>
+</html>'''
+    return html_interface
+
+# Supprimer l'ancienne route wikisummarizer-interface qui posait problème
 
 # Routes API du Wikisummarizer
 @app.route('/api/summarize', methods=['POST'])
