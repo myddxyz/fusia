@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fusia - Hub d'Outils Intelligents</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            padding: 3rem 0;
+            text-align: center;
+            animation: fadeInDown 1s ease-out;
+        }
+
+        .logo {
+            font-size: 4.5rem;
+            font-weight: 800;
+            color: white;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #fff, #f0f8ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .tagline {
+            font-size: 1.4rem;
+            color: rgba(255,255,255,0.9);
+            font-weight: 300;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            color: rgba(255,255,255,0.7);
+            font-weight: 400;
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 0;
+        }
+
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+            gap: 3rem;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .tool-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 25px;
+            padding: 3rem 2.5rem;
+            text-align: center;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tool-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.6s;
+        }
+
+        .tool-card:hover::before {
+            left: 100%;
+        }
+
+        .tool-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 25px 80px rgba(0,0,0,0.25);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .tool-icon {
+            font-size: 4.5rem;
+            margin-bottom: 1.5rem;
+            display: block;
+        }
+
+        .tool-title {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 1rem;
+        }
+
+        .tool-description {
+            font-size: 1.1rem;
+            color: rgba(255,255,255,0.8);
+            line-height: 1.6;
+            margin-bottom: 2rem;
+        }
+
+        .tool-status {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1.5rem;
+        }
+
+        .status-active {
+            background: linear-gradient(45deg, #2ecc71, #27ae60);
+            color: white;
+        }
+
+        .status-development {
+            background: linear-gradient(45deg, #f39c12, #e67e22);
+            color: white;
+        }
+
+        .tool-features {
+            text-align: left;
+            margin-bottom: 2rem;
+        }
+
+        .tool-features ul {
+            list-style: none;
+            color: rgba(255,255,255,0.8);
+        }
+
+        .tool-features li {
+            margin-bottom: 0.5rem;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        .tool-features li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: #2ecc71;
+            font-weight: bold;
+        }
+
+        .tool-button {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 15px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 1rem;
+            width: 100%;
+        }
+
+        .tool-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .tool-button:disabled {
+            background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .tool-button:disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            color: rgba(255,255,255,0.7);
+            font-size: 0.9rem;
+            margin-top: auto;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .footer-link {
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .footer-link:hover {
+            color: white;
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .tools-grid .tool-card:first-child {
+            animation: fadeInUp 1s ease-out 0.2s both;
+        }
+
+        .tools-grid .tool-card:last-child {
+            animation: fadeInUp 1s ease-out 0.4s both;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 1rem;
+            }
+            
+            .logo {
+                font-size: 3.5rem;
+            }
+            
+            .tagline {
+                font-size: 1.2rem;
+            }
+            
+            .tools-grid {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+                max-width: 500px;
+            }
+            
+            .tool-card {
+                padding: 2rem 1.5rem;
+            }
+            
+            .tool-icon {
+                font-size: 3.5rem;
+            }
+            
+            .tool-title {
+                font-size: 1.8rem;
+            }
+        }
+
+        /* Notification system */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            border-radius: 15px;
+            color: white;
+            font-weight: 500;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: all 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.info {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 class="logo">Fusia</h1>
+            <p class="tagline">Hub d'Outils Intelligents</p>
+            <p class="subtitle">Créé par Mydd - Propulsé par l'IA</p>
+        </header>
+
+        <main>
+            <div class="tools-grid">
+                <!-- WikiSummarizer Card -->
+                <div class="tool-card">
+                    <div class="tool-icon">📚</div>
+                    <h2 class="tool-title">WikiSummarizer</h2>
+                    <div class="tool-status status-active">Actif</div>
+                    <p class="tool-description">
+                        Résumés intelligents de Wikipedia avec Mistral AI. Obtenez des synthèses claires et précises en plusieurs langues.
+                    </p>
+                    <div class="tool-features">
+                        <ul>
+                            <li>Support multilingue (FR, EN, ES)</li>
+                            <li>Résumés personnalisables (court, moyen, long)</li>
+                            <li>Modes thématiques spécialisés</li>
+                            <li>Interface moderne et intuitive</li>
+                            <li>Cache intelligent et statistiques</li>
+                        </ul>
+                    </div>
+                    <button class="tool-button" onclick="openWikiSummarizer()">
+                        Accéder à WikiSummarizer
+                    </button>
+                </div>
+
+                <!-- Mathia Card -->
+                <div class="tool-card">
+                    <div class="tool-icon">🔢</div>
+                    <h2 class="tool-title">Mathia</h2>
+                    <div class="tool-status status-development">En développement</div>
+                    <p class="tool-description">
+                        Assistant mathématique intelligent combinant calculs, visualisations et théorie pour l'aide aux mathématiques.
+                    </p>
+                    <div class="tool-features">
+                        <ul>
+                            <li>Calcul de fonctions et équations</li>
+                            <li>Graphiques interactifs avec zoom</li>
+                            <li>Bibliothèque de théorèmes</li>
+                            <li>Assistant IA intégré</li>
+                            <li>Interface scientifique épurée</li>
+                        </ul>
+                    </div>
+                    <button class="tool-button" onclick="openMathia()">
+                        Accéder à Mathia
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <div class="footer-links">
+                <a href="https://github.com/myddxyz/fusia" class="footer-link" target="_blank">GitHub</a>
+                <a href="#" class="footer-link" onclick="showAbout()">À propos</a>
+                <a href="#" class="footer-link" onclick="showContact()">Contact</a>
+            </div>
+            <p>&copy; 2024 Fusia by Mydd. Tous droits réservés.</p>
+        </footer>
+    </div>
+
+    <script>
+        // Navigation functions
+        function openWikiSummarizer() {
+            // Redirection vers WikiSummarizer
+            window.location.href = '/wikisummarizer';
+        }
+
+        function openMathia() {
+            // Redirection vers Mathia
+            window.location.href = '/mathia';
+        }
+
+        function showAbout() {
+            showNotification('Fusia est un hub d\'outils intelligents créé par Mydd pour démocratiser l\'accès à l\'information et aux outils éducatifs.', 'info');
+        }
+
+        function showContact() {
+            showNotification('Retrouvez-moi sur GitHub : github.com/myddxyz', 'info');
+        }
+
+        // Notification system
+        function showNotification(message, type = 'info') {
+            // Remove existing notifications
+            document.querySelectorAll('.notification').forEach(n => n.remove());
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            // Show notification
+            setTimeout(() => notification.classList.add('show'), 100);
+            
+            // Hide notification after 4 seconds
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 4000);
+        }
+
+        // Add some interactive effects
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add hover effects to tool cards
+            const toolCards = document.querySelectorAll('.tool-card');
+            
+            toolCards.forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateY(-10px) scale(1.02)';
+                });
+                
+                card.addEventListener('mouseleave', function() {
+                    this.style.transform = 'translateY(0) scale(1)';
+                });
+            });
+
+            // Add click effects to buttons
+            const buttons = document.querySelectorAll('.tool-button');
+            buttons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    // Create ripple effect
+                    const ripple = document.createElement('span');
+                    const rect = this.getBoundingClientRect();
+                    const size = Math.max(rect.width, rect.height);
+                    const x = e.clientX - rect.left - size / 2;
+                    const y = e.clientY - rect.top - size / 2;
+                    
+                    ripple.style.cssText = `
+                        position: absolute;
+                        width: ${size}px;
+                        height: ${size}px;
+                        top: ${y}px;
+                        left: ${x}px;
+                        background: rgba(255,255,255,0.3);
+                        border-radius: 50%;
+                        transform: scale(0);
+                        animation: ripple 0.6s linear;
+                        pointer-events: none;
+                    `;
+                    
+                    this.appendChild(ripple);
+                    
+                    setTimeout(() => ripple.remove(), 600);
+                });
+            });
+        });
+
+        // Add CSS for ripple animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes ripple {
+                to {
+                    transform: scale(4);
+                    opacity: 0;
+                }
+            }
+            
+            .tool-button {
+                position: relative;
+                overflow: hidden;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Welcome animation
+        setTimeout(() => {
+            showNotification('Bienvenue sur Fusia ! Sélectionnez un outil pour commencer.', 'info');
+        }, 1500);
+    </script>
+</body>
+</html>
