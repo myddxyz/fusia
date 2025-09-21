@@ -587,7 +587,60 @@
             }
         }
 
-        /* Custom scrollbar */
+        /* Language Selector */
+        .language-selector {
+            position: fixed;
+            top: 30px;
+            left: 30px;
+            z-index: 1000;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 15px;
+            padding: 0.8rem 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow-light);
+        }
+
+        .language-selector:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-medium);
+        }
+
+        .language-icon {
+            font-size: 1.2rem;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+        }
+
+        .language-select {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            outline: none;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .language-select option {
+            background: #333;
+            color: white;
+            padding: 0.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .language-selector {
+                top: 15px;
+                left: 15px;
+                padding: 0.6rem 1rem;
+            }
+        }
         ::-webkit-scrollbar {
             width: 8px;
         }
@@ -609,7 +662,16 @@
     </style>
 </head>
 <body>
-<!-- Floating background elements -->
+    <!-- Language Selector -->
+    <div class="language-selector">
+        <span class="language-icon">🌐</span>
+        <select class="language-select" onchange="changeLanguage(this.value)">
+            <option value="en" selected>EN</option>
+            <option value="fr">FR</option>
+        </select>
+    </div>
+
+    <!-- Floating background elements -->
     <div class="floating-elements">
         <div class="floating-shape"></div>
         <div class="floating-shape"></div>
@@ -618,9 +680,9 @@
 
     <div class="container">
         <header>
-            <h1 class="logo">Fusia</h1>
-            <p class="tagline">Hub d'Outils Intelligents</p>
-            <p class="subtitle">Créé par Mydd - Propulsé par l'IA</p>
+            <h1 class="logo" data-en="Fusia" data-fr="Fusia">Fusia</h1>
+            <p class="tagline" data-en="Intelligent Tools Hub" data-fr="Hub d'Outils Intelligents">Intelligent Tools Hub</p>
+            <p class="subtitle" data-en="Created by Mydd - Powered by AI" data-fr="Créé par Mydd - Propulsé par l'IA">Created by Mydd - Powered by AI</p>
         </header>
 
         <main>
@@ -628,44 +690,50 @@
                 <!-- WikiSummarizer Card -->
                 <div class="tool-card" data-tool="wikisummarizer">
                     <div class="tool-icon">📚</div>
-                    <h2 class="tool-title">WikiSummarizer</h2>
-                    <div class="tool-status status-active">Actif</div>
-                    <p class="tool-description">
-                        Résumés intelligents de Wikipedia avec Mistral AI. Obtenez des synthèses claires et précises en plusieurs langues.
+                    <h2 class="tool-title" data-en="WikiSummarizer" data-fr="WikiSummarizer">WikiSummarizer</h2>
+                    <div class="tool-status status-active" data-en="Active" data-fr="Actif">Active</div>
+                    <p class="tool-description" 
+                       data-en="Smart Wikipedia summaries with Mistral AI. Get clear and precise summaries in multiple languages."
+                       data-fr="Résumés intelligents de Wikipedia avec Mistral AI. Obtenez des synthèses claires et précises en plusieurs langues.">
+                        Smart Wikipedia summaries with Mistral AI. Get clear and precise summaries in multiple languages.
                     </p>
                     <div class="tool-features">
                         <ul>
-                            <li>Support multilingue (FR, EN, ES)</li>
-                            <li>Résumés personnalisables (court, moyen, long)</li>
-                            <li>Modes thématiques spécialisés</li>
-                            <li>Interface moderne et intuitive</li>
-                            <li>Cache intelligent et statistiques</li>
+                            <li data-en="Multilingual support (FR, EN, ES)" data-fr="Support multilingue (FR, EN, ES)">Multilingual support (FR, EN, ES)</li>
+                            <li data-en="Customizable summaries (short, medium, long)" data-fr="Résumés personnalisables (court, moyen, long)">Customizable summaries (short, medium, long)</li>
+                            <li data-en="Specialized thematic modes" data-fr="Modes thématiques spécialisés">Specialized thematic modes</li>
+                            <li data-en="Modern and intuitive interface" data-fr="Interface moderne et intuitive">Modern and intuitive interface</li>
+                            <li data-en="Smart cache and statistics" data-fr="Cache intelligent et statistiques">Smart cache and statistics</li>
                         </ul>
                     </div>
-                    <button class="tool-button" onclick="openWikiSummarizer()">
-                        Accéder à WikiSummarizer
+                    <button class="tool-button" onclick="openWikiSummarizer()" 
+                            data-en="Access WikiSummarizer" data-fr="Accéder à WikiSummarizer">
+                        Access WikiSummarizer
                     </button>
                 </div>
 
                 <!-- Mathia Card -->
                 <div class="tool-card" data-tool="mathia">
                     <div class="tool-icon">🔢</div>
-                    <h2 class="tool-title">Mathia</h2>
-                    <div class="tool-status status-development">En développement</div>
-                    <p class="tool-description">
-                        Assistant mathématique intelligent combinant calculs, visualisations et théorie pour l'aide aux mathématiques.
+                    <h2 class="tool-title" data-en="Mathia" data-fr="Mathia">Mathia</h2>
+                    <div class="tool-status status-development" data-en="In Development" data-fr="En développement">In Development</div>
+                    <p class="tool-description"
+                       data-en="Intelligent mathematical assistant combining calculations, visualizations and theory for mathematics help."
+                       data-fr="Assistant mathématique intelligent combinant calculs, visualisations et théorie pour l'aide aux mathématiques.">
+                        Intelligent mathematical assistant combining calculations, visualizations and theory for mathematics help.
                     </p>
                     <div class="tool-features">
                         <ul>
-                            <li>Calcul de fonctions et équations</li>
-                            <li>Graphiques interactifs avec zoom</li>
-                            <li>Bibliothèque de théorèmes</li>
-                            <li>Assistant IA intégré</li>
-                            <li>Interface scientifique épurée</li>
+                            <li data-en="Function and equation calculations" data-fr="Calcul de fonctions et équations">Function and equation calculations</li>
+                            <li data-en="Interactive graphics with zoom" data-fr="Graphiques interactifs avec zoom">Interactive graphics with zoom</li>
+                            <li data-en="Theorem library" data-fr="Bibliothèque de théorèmes">Theorem library</li>
+                            <li data-en="Integrated AI assistant" data-fr="Assistant IA intégré">Integrated AI assistant</li>
+                            <li data-en="Clean scientific interface" data-fr="Interface scientifique épurée">Clean scientific interface</li>
                         </ul>
                     </div>
-                    <button class="tool-button" onclick="openMathia()">
-                        Accéder à Mathia
+                    <button class="tool-button" onclick="openMathia()"
+                            data-en="Access Mathia" data-fr="Accéder à Mathia">
+                        Access Mathia
                     </button>
                 </div>
             </div>
@@ -674,35 +742,74 @@
         <footer>
             <div class="footer-links">
                 <a href="https://github.com/myddxyz/fusia" class="footer-link" target="_blank">GitHub</a>
-                <a href="#" class="footer-link" onclick="showAbout()">À propos</a>
-                <a href="#" class="footer-link" onclick="showContact()">Contact</a>
+                <a href="#" class="footer-link" onclick="showAbout()" data-en="About" data-fr="À propos">About</a>
+                <a href="#" class="footer-link" onclick="showContact()" data-en="Contact" data-fr="Contact">Contact</a>
             </div>
-            <p>&copy; 2024 Fusia by Mydd. Tous droits réservés.</p>
+            <p data-en="&copy; 2024 Fusia by Mydd. All rights reserved." data-fr="&copy; 2024 Fusia by Mydd. Tous droits réservés.">&copy; 2024 Fusia by Mydd. All rights reserved.</p>
         </footer>
     </div>
 
     <script>
-        // Loading management
-        function hideLoadingScreen() {
-            const loadingOverlay = document.getElementById('loadingOverlay');
-            if (loadingOverlay) {
-                loadingOverlay.classList.add('fade-out');
-                setTimeout(() => {
-                    loadingOverlay.remove();
-                    showNotification('Bienvenue sur Fusia ! Sélectionnez un outil pour commencer.', 'info');
-                }, 500);
+        // Language system
+        const translations = {
+            en: {
+                welcomeMessage: 'Welcome to Fusia! Select a tool to get started.',
+                aboutMessage: 'Fusia is an intelligent tools hub created by Mydd to democratize access to information and educational tools.',
+                contactMessage: 'Find me on GitHub: github.com/myddxyz',
+                errorMessage: 'An unexpected error occurred. Please refresh the page.'
+            },
+            fr: {
+                welcomeMessage: 'Bienvenue sur Fusia ! Sélectionnez un outil pour commencer.',
+                aboutMessage: 'Fusia est un hub d\'outils intelligents créé par Mydd pour démocratiser l\'accès à l\'information et aux outils éducatifs.',
+                contactMessage: 'Retrouvez-moi sur GitHub : github.com/myddxyz',
+                errorMessage: 'Une erreur inattendue s\'est produite. Veuillez rafraîchir la page.'
+            }
+        };
+
+        let currentLanguage = 'en'; // Default language
+
+        function changeLanguage(lang) {
+            currentLanguage = lang;
+            
+            // Update HTML lang attribute
+            document.documentElement.lang = lang;
+            
+            // Update all elements with data attributes
+            document.querySelectorAll('[data-en][data-fr]').forEach(element => {
+                const text = element.getAttribute(`data-${lang}`);
+                if (text) {
+                    element.innerHTML = text;
+                }
+            });
+            
+            // Save language preference
+            localStorage.setItem('fusia-language', lang);
+            
+            // Show language change notification
+            const message = lang === 'en' ? 'Language changed to English' : 'Langue changée vers le français';
+            showNotification(message, 'info');
+            
+            // Track language change
+            trackEvent('language_changed', { language: lang });
+        }
+
+        // Load saved language preference
+        function loadLanguagePreference() {
+            const savedLang = localStorage.getItem('fusia-language');
+            if (savedLang && ['en', 'fr'].includes(savedLang)) {
+                currentLanguage = savedLang;
+                document.querySelector('.language-select').value = savedLang;
+                changeLanguage(savedLang);
             }
         }
 
-        // Hide loading screen when DOM is ready
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', function() {
-                setTimeout(hideLoadingScreen, 800);
-            });
-        } else {
-            // DOM already loaded
-            setTimeout(hideLoadingScreen, 800);
-        }
+        // Show welcome notification on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadLanguagePreference();
+            setTimeout(() => {
+                showNotification(translations[currentLanguage].welcomeMessage, 'info');
+            }, 1500);
+        });
 
         // Navigation functions (preserved from original)
         function openWikiSummarizer() {
@@ -716,11 +823,11 @@
         }
 
         function showAbout() {
-            showNotification('Fusia est un hub d\'outils intelligents créé par Mydd pour démocratiser l\'accès à l\'information et aux outils éducatifs.', 'info');
+            showNotification(translations[currentLanguage].aboutMessage, 'info');
         }
 
         function showContact() {
-            showNotification('Retrouvez-moi sur GitHub : github.com/myddxyz', 'info');
+            showNotification(translations[currentLanguage].contactMessage, 'info');
         }
 
         // Enhanced notification system
