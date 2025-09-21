@@ -398,7 +398,7 @@ summarizer = WikipediaMistralSummarizer()
 
 @app.route('/')
 def index():
-    """Page d'accueil avec l'interface"""
+    """Page d'accueil avec l'interface en plein écran"""
     return '''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -424,182 +424,177 @@ def index():
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
-            min-height: 100vh; padding: 20px;
-            display: flex; align-items: center; justify-content: center;
+            min-height: 100vh; 
+            display: flex; 
+            flex-direction: column;
             transition: all 0.3s ease;
         }
         
-        .container {
-            background: var(--bg-primary); border-radius: 30px; padding: 40px;
-            width: 100%; max-width: 900px; position: relative;
-            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
-        }
-        
-        .container::before {
-            content: ''; position: absolute; top: 0; left: 15px; right: 15px; height: 2px;
-            background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
-            border-radius: 30px 30px 0 0;
-        }
-        
-        .header { text-align: center; margin-bottom: 40px; position: relative; }
-        
-        .header-controls {
-            position: absolute; top: 0; width: 100%;
+        .top-header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 15px 30px;
             display: flex; justify-content: space-between; align-items: center;
         }
         
-        .language-selector {
-            background: var(--bg-primary); border: none; border-radius: 15px;
-            padding: 10px 15px; cursor: pointer; font-size: 0.9rem;
-            color: var(--text-primary); transition: all 0.2s ease;
-            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+        .back-button {
+            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 15px; padding: 10px 20px; color: white; text-decoration: none;
+            display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 0.9rem;
+            transition: all 0.3s ease; backdrop-filter: blur(20px);
         }
         
-        .language-selector:hover { transform: translateY(-2px); }
+        .back-button:hover {
+            background: rgba(255, 255, 255, 0.2); transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
         
-        .right-controls { display: flex; align-items: center; gap: 15px; }
+        .header-controls {
+            display: flex; gap: 15px; align-items: center;
+        }
+        
+        .language-selector {
+            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 15px; padding: 10px 15px; cursor: pointer; font-size: 0.9rem;
+            color: white; transition: all 0.2s ease; backdrop-filter: blur(20px);
+        }
+        
+        .language-selector:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
         
         .theme-toggle {
-            background: var(--bg-primary); border: none; border-radius: 15px;
-            padding: 12px; cursor: pointer; font-size: 1.2rem; transition: all 0.2s ease;
-            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 15px; padding: 12px; cursor: pointer; font-size: 1.2rem; 
+            transition: all 0.2s ease; backdrop-filter: blur(20px); color: white;
         }
         
-        .theme-toggle:hover { transform: translateY(-2px); }
+        .theme-toggle:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
         
         .author-link {
-            font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;
+            font-size: 0.85rem; color: rgba(255,255,255,0.8); text-decoration: none;
             font-weight: 500; transition: all 0.2s ease;
         }
         
-        .author-link:hover {
-            color: var(--accent); transform: translateY(-1px);
+        .author-link:hover { color: white; transform: translateY(-1px); }
+        
+        .container {
+            flex: 1; padding: 100px 30px 30px; max-width: 1200px; margin: 0 auto; width: 100%;
+            display: flex; flex-direction: column; gap: 30px;
+        }
+        
+        .title-section {
+            text-align: center; margin-bottom: 20px;
         }
         
         .title {
-            font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            background-clip: text;
+            font-size: 2.5rem; font-weight: 700; margin-bottom: 10px; color: white;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
         
-        .subtitle { color: var(--text-secondary); font-size: 1.1rem; }
+        .subtitle { color: rgba(255,255,255,0.8); font-size: 1.1rem; }
         
         .stats {
-            display: flex; justify-content: center; gap: 20px;
-            margin-bottom: 30px; flex-wrap: wrap;
+            display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; flex-wrap: wrap;
         }
         
         .stat-item {
-            background: var(--bg-primary); padding: 10px 20px; border-radius: 15px;
-            font-size: 0.9rem; color: var(--text-secondary);
-            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2); padding: 10px 20px; border-radius: 15px;
+            font-size: 0.9rem; color: rgba(255,255,255,0.9);
         }
         
         .form-section {
-            background: var(--bg-primary); border-radius: 25px; padding: 30px; margin-bottom: 30px;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 25px; padding: 30px;
         }
         
         .form-group { margin-bottom: 25px; }
         
         .label {
-            display: block; color: var(--text-primary); font-weight: 600;
-            margin-bottom: 12px; font-size: 1rem;
+            display: block; color: white; font-weight: 600; margin-bottom: 12px; font-size: 1rem;
         }
         
         .input {
-            width: 100%; padding: 18px 24px; background: var(--bg-primary);
-            border: none; border-radius: 20px; font-size: 1rem; color: var(--text-primary);
-            outline: none; transition: all 0.3s ease;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
+            width: 100%; padding: 18px 24px; 
+            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px; font-size: 1rem; color: white; outline: none; 
+            transition: all 0.3s ease; backdrop-filter: blur(20px);
         }
         
         .input:focus {
-            box-shadow: inset 12px 12px 20px var(--shadow-light), inset -12px -12px 20px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.2); border-color: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.1);
         }
         
-        .input::placeholder { color: var(--text-secondary); }
+        .input::placeholder { color: rgba(255,255,255,0.7); }
         
         .length-selector { display: flex; gap: 15px; flex-wrap: wrap; }
         
         .length-btn {
-            background: var(--bg-primary); border: none; border-radius: 15px;
-            padding: 12px 20px; font-size: 0.9rem; color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px; padding: 12px 20px; font-size: 0.9rem; color: rgba(255,255,255,0.8);
             cursor: pointer; transition: all 0.2s ease; flex: 1; min-width: 150px;
-            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+            backdrop-filter: blur(20px);
         }
         
-        .length-btn:hover { transform: translateY(-2px); }
+        .length-btn:hover { transform: translateY(-2px); background: rgba(255, 255, 255, 0.15); }
         
         .length-btn.active {
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            color: white; box-shadow: inset 4px 4px 8px rgba(0,0,0,0.2);
+            background: rgba(255, 255, 255, 0.3); color: white; 
+            border-color: rgba(255, 255, 255, 0.5);
         }
         
-        .mode-selector {
-            display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;
-        }
+        .mode-selector { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
         
         .mode-chip {
-            background: var(--bg-primary); border: none; border-radius: 12px;
-            padding: 8px 14px; font-size: 0.8rem; color: var(--text-secondary);
-            cursor: pointer; transition: all 0.2s ease;
-            box-shadow: 4px 4px 8px var(--shadow-light), -4px -4px 8px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px; padding: 8px 14px; font-size: 0.8rem; color: rgba(255,255,255,0.8);
+            cursor: pointer; transition: all 0.2s ease; backdrop-filter: blur(20px);
         }
         
-        .mode-chip:hover {
-            transform: translateY(-1px);
-            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+        .mode-chip:hover { 
+            transform: translateY(-1px); background: rgba(255, 255, 255, 0.15);
         }
         
         .mode-chip.active {
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            color: white; transform: translateY(-1px);
-            box-shadow: inset 2px 2px 4px rgba(0,0,0,0.2);
+            background: rgba(255, 255, 255, 0.3); color: white; transform: translateY(-1px);
+            border-color: rgba(255, 255, 255, 0.5);
         }
         
         .suggestions { margin-top: 15px; }
         .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
         
         .chip {
-            background: var(--bg-tertiary); border: none; border-radius: 20px;
-            padding: 8px 16px; font-size: 0.8rem; color: var(--text-primary);
-            cursor: pointer; transition: all 0.2s ease;
-            box-shadow: 3px 3px 6px var(--shadow-light), -3px -3px 6px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px; padding: 8px 16px; font-size: 0.8rem; color: rgba(255,255,255,0.9);
+            cursor: pointer; transition: all 0.2s ease; backdrop-filter: blur(20px);
         }
         
         .chip:hover {
-            background: var(--accent); color: white; transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.3); color: white; transform: translateY(-2px);
         }
         
         .btn {
-            background: var(--bg-primary); border: none; border-radius: 20px;
-            padding: 18px 36px; font-size: 1.1rem; font-weight: 600;
-            color: var(--text-primary); cursor: pointer; transition: all 0.2s ease;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px; padding: 18px 36px; font-size: 1.1rem; font-weight: 600;
+            color: rgba(255,255,255,0.9); cursor: pointer; transition: all 0.2s ease;
+            backdrop-filter: blur(20px);
         }
         
         .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 12px 12px 20px var(--shadow-light), -12px -12px 20px var(--shadow-dark);
+            transform: translateY(-2px); background: rgba(255, 255, 255, 0.15);
         }
         
-        .btn:active {
-            transform: translateY(0);
-            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark);
-        }
-        
+        .btn:active { transform: translateY(0); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         
         .btn-primary {
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            color: white;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.3); color: white;
+            border-color: rgba(255, 255, 255, 0.5);
         }
         
         .btn-primary:hover:not(:disabled) {
-            box-shadow: 12px 12px 20px var(--shadow-light), -12px -12px 20px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.4);
         }
         
         .controls {
@@ -608,33 +603,32 @@ def index():
         }
         
         .status {
-            margin: 30px 0; padding: 25px; background: var(--bg-primary);
-            border-radius: 20px; display: none;
-            box-shadow: inset 6px 6px 12px var(--shadow-light), inset -6px -6px 12px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 20px;
+            padding: 25px; display: none;
         }
         
         .status.active { display: block; animation: slideDown 0.3s ease; }
         
         .status-text {
-            color: var(--text-primary); font-weight: 500; margin-bottom: 15px;
+            color: white; font-weight: 500; margin-bottom: 15px;
             display: flex; align-items: center;
         }
         
         .progress-bar {
-            width: 100%; height: 8px; background: var(--bg-secondary);
-            border-radius: 10px; overflow: hidden;
-            box-shadow: inset 3px 3px 6px var(--shadow-light), inset -3px -3px 6px var(--shadow-dark);
+            width: 100%; height: 8px; 
+            background: rgba(255, 255, 255, 0.2); border-radius: 10px; overflow: hidden;
         }
         
         .progress-fill {
             height: 100%; border-radius: 10px; width: 0%; transition: width 0.3s ease;
-            background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
+            background: linear-gradient(90deg, rgba(255,255,255,0.8), rgba(255,255,255,0.6));
         }
         
         .result {
-            margin-top: 30px; padding: 30px; background: var(--bg-primary);
-            border-radius: 25px; display: none; position: relative;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 25px;
+            padding: 30px; display: none; position: relative;
         }
         
         .result.active { display: block; animation: slideUp 0.5s ease; }
@@ -645,49 +639,45 @@ def index():
         }
         
         .result-title {
-            color: var(--text-primary); font-size: 1.3rem; font-weight: 600;
-            padding-bottom: 15px; border-bottom: 2px solid var(--bg-secondary);
+            color: white; font-size: 1.3rem; font-weight: 600;
+            padding-bottom: 15px; border-bottom: 2px solid rgba(255, 255, 255, 0.2);
             flex: 1; margin-right: 20px;
         }
         
         .copy-btn {
-            background: var(--bg-primary); border: none; border-radius: 12px;
-            padding: 10px; cursor: pointer; font-size: 1rem; color: var(--text-secondary);
-            transition: all 0.2s ease;
-            box-shadow: 4px 4px 8px var(--shadow-light), -4px -4px 8px var(--shadow-dark);
+            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px; padding: 10px; cursor: pointer; font-size: 1rem; 
+            color: rgba(255,255,255,0.8); transition: all 0.2s ease; backdrop-filter: blur(20px);
         }
         
         .copy-btn:hover {
-            transform: translateY(-2px); color: var(--accent);
-            box-shadow: 6px 6px 12px var(--shadow-light), -6px -6px 12px var(--shadow-dark);
+            transform: translateY(-2px); color: white; background: rgba(255, 255, 255, 0.2);
         }
         
-        .copy-btn.success {
-            color: #2ecc71;
-        }
+        .copy-btn.success { color: #4ade80; }
         
-        .result-meta { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 20px; }
+        .result-meta { color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 20px; }
         
-        .result-content { color: var(--text-secondary); line-height: 1.7; font-size: 1rem; }
+        .result-content { color: rgba(255,255,255,0.9); line-height: 1.7; font-size: 1rem; }
         .result-content p { margin-bottom: 15px; }
-        .result-content strong { color: var(--text-primary); font-weight: 600; }
-        .result-content em { font-style: italic; color: var(--accent); }
+        .result-content strong { color: white; font-weight: 600; }
+        .result-content em { font-style: italic; color: rgba(255,255,255,0.95); }
         
         .result-url {
             margin-top: 20px; padding: 15px; border-radius: 15px;
-            background: rgba(102, 126, 234, 0.1); border-left: 4px solid var(--accent);
+            background: rgba(255, 255, 255, 0.1); border-left: 4px solid rgba(255,255,255,0.5);
         }
         
         .result-url a {
-            color: var(--accent); text-decoration: none; font-weight: 500; word-break: break-all;
+            color: rgba(255,255,255,0.9); text-decoration: none; font-weight: 500; word-break: break-all;
         }
         
-        .result-url a:hover { text-decoration: underline; }
+        .result-url a:hover { color: white; text-decoration: underline; }
         
         .loading {
             display: inline-block; width: 20px; height: 20px; margin-right: 10px;
-            border: 3px solid var(--bg-secondary); border-radius: 50%;
-            border-top-color: var(--accent); animation: spin 1s ease-in-out infinite;
+            border: 3px solid rgba(255,255,255,0.3); border-radius: 50%;
+            border-top-color: white; animation: spin 1s ease-in-out infinite;
         }
         
         .modal {
@@ -699,29 +689,26 @@ def index():
         .modal.active { display: flex; animation: fadeIn 0.3s ease; }
         
         .modal-content {
-            background: var(--bg-primary); border-radius: 25px; padding: 40px;
+            background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 25px; padding: 40px;
             max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;
-            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
             position: relative;
         }
         
         .modal-close {
             position: absolute; top: 20px; right: 20px; background: none;
-            border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);
+            border: none; font-size: 1.5rem; cursor: pointer; color: rgba(255,255,255,0.8);
             transition: color 0.2s ease;
         }
         
-        .modal-close:hover { color: var(--text-primary); }
+        .modal-close:hover { color: white; }
         
         .modal h2 {
-            color: var(--text-primary); font-size: 1.8rem; margin-bottom: 20px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: white; font-size: 1.8rem; margin-bottom: 20px;
         }
         
         .modal p {
-            color: var(--text-secondary); line-height: 1.6; margin-bottom: 15px;
+            color: rgba(255,255,255,0.9); line-height: 1.6; margin-bottom: 15px;
         }
         
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -730,21 +717,22 @@ def index():
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         
         .notification {
-            position: fixed; top: 20px; right: 20px; padding: 15px 25px;
+            position: fixed; top: 90px; right: 20px; padding: 15px 25px;
             border-radius: 15px; color: white; font-weight: 500; z-index: 1000;
             transform: translateX(400px); transition: all 0.3s ease;
+            backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.3);
         }
         
         .notification.show { transform: translateX(0); }
-        .notification.error { background: #e74c3c; }
-        .notification.success { background: #2ecc71; }
-        .notification.info { background: var(--accent); }
+        .notification.error { background: rgba(239, 68, 68, 0.9); }
+        .notification.success { background: rgba(34, 197, 94, 0.9); }
+        .notification.info { background: rgba(59, 130, 246, 0.9); }
         
         @media (max-width: 768px) {
-            .container { padding: 25px 20px; margin: 10px; }
+            .top-header { padding: 15px 20px; flex-direction: column; gap: 15px; }
+            .header-controls { width: 100%; justify-content: space-between; }
+            .container { padding: 140px 20px 20px; }
             .title { font-size: 2rem; }
-            .header-controls { position: relative; justify-content: center; margin-bottom: 20px; }
-            .right-controls { margin-top: 10px; }
             .stats { gap: 10px; }
             .stat-item { padding: 8px 15px; font-size: 0.8rem; }
             .length-selector { flex-direction: column; gap: 10px; }
@@ -759,21 +747,27 @@ def index():
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <div class="header-controls">
-                <select class="language-selector" id="languageSelector" onchange="changeLanguage()">
-                    <option value="en">🇺🇸 English</option>
-                    <option value="fr">🇫🇷 Français</option>
-                    <option value="es">🇪🇸 Español</option>
-                </select>
-                
-                <div class="right-controls">
-                    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
-                    <a href="#" class="author-link" onclick="showAuthorModal()" data-text-key="by_mydd">by Mydd</a>
-                </div>
-            </div>
+    <!-- Header fixe avec bouton retour -->
+    <div class="top-header">
+        <a href="/" class="back-button">
+            <span>←</span>
+            <span data-text-key="back_to_hub">Retour au Hub</span>
+        </a>
+        
+        <div class="header-controls">
+            <select class="language-selector" id="languageSelector" onchange="changeLanguage()">
+                <option value="en">🇺🇸 English</option>
+                <option value="fr">🇫🇷 Français</option>
+                <option value="es">🇪🇸 Español</option>
+            </select>
             
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+            <a href="#" class="author-link" onclick="showAuthorModal()" data-text-key="by_mydd">by Mydd</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="title-section">
             <h1 class="title" data-text-key="title">Wikipedia Summarizer Pro</h1>
             <p class="subtitle" data-text-key="subtitle">Smart summaries with Mistral AI</p>
         </div>
@@ -793,7 +787,7 @@ def index():
                            data-placeholder-key="search_placeholder" required>
                     
                     <div class="suggestions">
-                        <span style="color: var(--text-secondary); font-size: 0.9rem;">💡 <span data-text-key="popular_suggestions">Popular suggestions:</span></span>
+                        <span style="color: rgba(255,255,255,0.8); font-size: 0.9rem;">💡 <span data-text-key="popular_suggestions">Popular suggestions:</span></span>
                         <div class="suggestion-chips" id="suggestionChips"></div>
                     </div>
                 </div>
@@ -902,6 +896,7 @@ def index():
             en: {
                 title: "Wikipedia Summarizer Pro",
                 subtitle: "Smart summaries with Mistral AI",
+                back_to_hub: "Back to Hub",
                 search_theme: "Theme to search",
                 search_placeholder: "Artificial intelligence, Paris, Einstein...",
                 popular_suggestions: "Popular suggestions:",
@@ -951,6 +946,7 @@ def index():
             fr: {
                 title: "Wikipedia Summarizer Pro",
                 subtitle: "Résumés intelligents avec Mistral AI",
+                back_to_hub: "Retour au Hub",
                 search_theme: "Thème à rechercher",
                 search_placeholder: "Intelligence artificielle, Paris, Einstein...",
                 popular_suggestions: "Suggestions populaires:",
@@ -1000,6 +996,7 @@ def index():
             es: {
                 title: "Wikipedia Summarizer Pro", 
                 subtitle: "Resúmenes inteligentes con Mistral AI",
+                back_to_hub: "Volver al Hub",
                 search_theme: "Tema a buscar",
                 search_placeholder: "Inteligencia artificial, París, Einstein...",
                 popular_suggestions: "Sugerencias populares:",
@@ -1120,6 +1117,7 @@ def index():
             }
         }
 
+        // Toutes les autres fonctions restent identiques...
         function selectLength(length, element) {
             document.querySelectorAll('.length-btn').forEach(btn => btn.classList.remove('active'));
             element.classList.add('active');
@@ -1149,7 +1147,6 @@ def index():
                 return;
             }
 
-            // Get text content without HTML
             const textContent = content.textContent || content.innerText;
             
             navigator.clipboard.writeText(textContent).then(function() {
@@ -1356,7 +1353,6 @@ def index():
             const sourceIcon = data.source === 'wikipedia' ? '📖' : '🤖';
             const sourceText = data.source === 'wikipedia' ? translations[currentLanguage].wikipedia : translations[currentLanguage].ai_only;
             
-            // Ajouter le mode dans les métadonnées
             const modeText = currentMode !== 'general' ? ` • ${currentMode}` : '';
             let metaText = `${sourceIcon} ${sourceText} • ${data.processing_time}s • ${data.length_mode}${modeText}`;
             
@@ -1391,7 +1387,6 @@ def index():
             hideResult();
             isProcessing = false;
             
-            // Reset mode to general
             currentMode = 'general';
             document.querySelectorAll('.mode-chip').forEach(btn => btn.classList.remove('active'));
             document.querySelector('.mode-chip[onclick*="general"]').classList.add('active');
@@ -1438,21 +1433,9 @@ def index():
             }
         });
 
-        // Click outside modal to close
         document.getElementById('authorModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 hideAuthorModal();
-            }
-        });
-
-        // Close language dropdown when clicking outside
-        document.addEventListener('click', function(e) {
-            const dropdown = document.querySelector('.language-dropdown');
-            const options = document.getElementById('languageOptions');
-            
-            if (dropdown && options && !dropdown.contains(e.target)) {
-                dropdown.classList.remove('active');
-                options.classList.remove('show');
             }
         });
     </script>
