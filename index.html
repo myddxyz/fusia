@@ -722,7 +722,9 @@
 
         // Navigation functions - EXACTLY like original
         function openWikiSummarizer() {
-            window.location.href = '/wikisummarizer';
+            // Temporary redirect to GitHub or show notification until page is ready
+            showNotification('WikiSummarizer is coming soon! Check GitHub for updates.', 'info');
+            // window.location.href = '/wikisummarizer'; // Uncomment when page is ready
         }
 
         function openMathia() {
