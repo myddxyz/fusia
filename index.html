@@ -1,11 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fusia - Intelligent Tools Hub</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <title>Fusia - Hub d'Outils Intelligents</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         * {
@@ -22,6 +20,7 @@
             position: relative;
         }
 
+        /* Fond animé sophistiqué */
         body::before {
             content: '';
             position: fixed;
@@ -35,53 +34,12 @@
                 radial-gradient(circle at 40% 40%, rgba(120, 219, 226, 0.2) 0%, transparent 50%);
             pointer-events: none;
             z-index: -1;
+            animation: backgroundShift 20s ease-in-out infinite alternate;
         }
 
-        /* Language Selector */
-        .language-selector {
-            position: fixed;
-            top: 25px;
-            left: 25px;
-            z-index: 1000;
-            background: rgba(255, 255, 255, 0.15);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 15px;
-            padding: 0.8rem 1.2rem;
-            display: flex;
-            align-items: center;
-            gap: 0.8rem;
-            transition: all 0.3s ease;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-
-        .language-selector:hover {
-            background: rgba(255, 255, 255, 0.2);
-            transform: translateY(-2px);
-            box-shadow: 0 15px 60px rgba(0, 0, 0, 0.2);
-        }
-
-        .language-icon {
-            font-size: 1.2rem;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
-        }
-
-        .language-select {
-            background: transparent;
-            border: none;
-            color: white;
-            font-weight: 600;
-            font-size: 0.9rem;
-            cursor: pointer;
-            outline: none;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .language-select option {
-            background: #333;
-            color: white;
-            padding: 0.5rem;
+        @keyframes backgroundShift {
+            0% { transform: translateX(0) translateY(0) scale(1); }
+            100% { transform: translateX(-20px) translateY(-20px) scale(1.05); }
         }
 
         .container {
@@ -93,6 +51,7 @@
             flex-direction: column;
         }
 
+        /* Header avec animations avancées */
         header {
             padding: 4rem 0 2rem;
             text-align: center;
@@ -125,11 +84,17 @@
             height: 3px;
             background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
             border-radius: 2px;
+            animation: logoGlow 2s ease-in-out infinite alternate;
         }
 
         @keyframes gradient-shift {
             0%, 100% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
+        }
+
+        @keyframes logoGlow {
+            0% { box-shadow: 0 0 5px rgba(255,255,255,0.5); }
+            100% { box-shadow: 0 0 20px rgba(255,255,255,0.8); }
         }
 
         .tagline {
@@ -139,6 +104,7 @@
             letter-spacing: 1px;
             margin-bottom: 0.8rem;
             text-transform: uppercase;
+            animation: fadeInUp 1s ease-out 0.3s both;
         }
 
         .subtitle {
@@ -146,6 +112,7 @@
             color: rgba(255,255,255,0.7);
             font-weight: 300;
             font-style: italic;
+            animation: fadeInUp 1s ease-out 0.5s both;
         }
 
         main {
@@ -164,6 +131,7 @@
             max-width: 1200px;
         }
 
+        /* Cards avec glassmorphism premium */
         .tool-card {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(25px);
@@ -178,6 +146,7 @@
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
         }
 
+        /* Effet de brillance sophistiqué */
         .tool-card::before {
             content: '';
             position: absolute;
@@ -187,6 +156,7 @@
             height: 100%;
             background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
             transition: left 0.8s ease;
+            z-index: 1;
         }
 
         .tool-card::after {
@@ -215,18 +185,37 @@
             transform: translateY(-15px) scale(1.02);
             box-shadow: 0 25px 80px rgba(0,0,0,0.25);
             background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
         }
 
+        /* Animations d'entrée des cards */
+        .tool-card:first-child {
+            animation: slideInLeft 1s ease-out 0.3s both;
+        }
+
+        .tool-card:last-child {
+            animation: slideInRight 1s ease-out 0.5s both;
+        }
+
+        /* Icônes avec effets dynamiques */
         .tool-icon {
             font-size: 5rem;
             margin-bottom: 2rem;
             display: block;
             filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
             transition: transform 0.5s ease;
+            position: relative;
+            z-index: 2;
         }
 
         .tool-card:hover .tool-icon {
             transform: scale(1.1) rotate(5deg);
+            animation: iconBounce 0.6s ease-in-out;
+        }
+
+        @keyframes iconBounce {
+            0%, 100% { transform: scale(1.1) rotate(5deg); }
+            50% { transform: scale(1.2) rotate(10deg); }
         }
 
         .tool-title {
@@ -235,6 +224,8 @@
             color: white;
             margin-bottom: 1.5rem;
             text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: relative;
+            z-index: 2;
         }
 
         .tool-description {
@@ -243,8 +234,11 @@
             line-height: 1.7;
             margin-bottom: 2.5rem;
             font-weight: 400;
+            position: relative;
+            z-index: 2;
         }
 
+        /* Status badges avec animations */
         .tool-status {
             display: inline-block;
             padding: 0.8rem 1.5rem;
@@ -256,6 +250,7 @@
             margin-bottom: 2rem;
             position: relative;
             overflow: hidden;
+            z-index: 2;
         }
 
         .tool-status::before {
@@ -297,6 +292,7 @@
             50% { box-shadow: 0 4px 25px rgba(243, 156, 18, 0.6); }
         }
 
+        /* Features avec design premium */
         .tool-features {
             text-align: left;
             margin-bottom: 3rem;
@@ -304,6 +300,8 @@
             padding: 2rem;
             border-radius: 20px;
             border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            z-index: 2;
         }
 
         .tool-features ul {
@@ -338,6 +336,7 @@
             50% { transform: scale(1.2) rotate(180deg); opacity: 0.8; }
         }
 
+        /* Boutons avec effets avancés */
         .tool-button {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
@@ -354,6 +353,7 @@
             position: relative;
             overflow: hidden;
             box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+            z-index: 2;
         }
 
         .tool-button::before {
@@ -392,6 +392,7 @@
             box-shadow: 0 8px 25px rgba(149, 165, 166, 0.3);
         }
 
+        /* Footer premium */
         footer {
             text-align: center;
             padding: 3rem 0;
@@ -402,6 +403,7 @@
             backdrop-filter: blur(10px);
             border-top: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 30px 30px 0 0;
+            animation: fadeInUp 1s ease-out 1.2s both;
         }
 
         .footer-links {
@@ -442,7 +444,33 @@
             width: 100%;
         }
 
-        /* Animations */
+        /* Système de notifications premium */
+        .notification {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            padding: 1.5rem 2rem;
+            border-radius: 20px;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 15px 60px rgba(0, 0, 0, 0.2);
+            max-width: 350px;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.info {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+        }
+
+        /* Animations principales */
         @keyframes fadeInDown {
             from {
                 opacity: 0;
@@ -487,48 +515,16 @@
             }
         }
 
-        .tools-grid .tool-card:first-child {
-            animation: slideInLeft 1s ease-out 0.3s both;
-        }
-
-        .tools-grid .tool-card:last-child {
-            animation: slideInRight 1s ease-out 0.5s both;
-        }
-
-        /* Notification system */
-        .notification {
-            position: fixed;
-            top: 30px;
-            right: 30px;
-            padding: 1.5rem 2rem;
-            border-radius: 20px;
-            color: white;
-            font-weight: 600;
-            z-index: 1000;
-            transform: translateX(400px);
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 15px 60px rgba(0, 0, 0, 0.2);
-            max-width: 350px;
-        }
-
-        .notification.show {
-            transform: translateX(0);
-        }
-
-        .notification.info {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-        }
-
-        /* Responsive Design */
-        @media (max-width: 768px) {
-            .language-selector {
-                top: 15px;
-                left: 15px;
-                padding: 0.6rem 1rem;
+        /* Effet ripple */
+        @keyframes ripple {
+            to {
+                transform: scale(4);
+                opacity: 0;
             }
+        }
 
+        /* Design responsive */
+        @media (max-width: 768px) {
             .container {
                 padding: 0 1.5rem;
             }
@@ -592,36 +588,14 @@
                 padding: 1.5rem;
             }
         }
-
-        /* Ripple effect styles */
-        .tool-button {
-            position: relative;
-            overflow: hidden;
-        }
-
-        @keyframes ripple {
-            to {
-                transform: scale(4);
-                opacity: 0;
-            }
-        }
     </style>
 </head>
 <body>
-    <!-- Language Selector -->
-    <div class="language-selector">
-        <span class="language-icon">🌐</span>
-        <select class="language-select" onchange="changeLanguage(this.value)">
-            <option value="en" selected>EN</option>
-            <option value="fr">FR</option>
-        </select>
-    </div>
-
     <div class="container">
         <header>
-            <h1 class="logo" data-en="Fusia" data-fr="Fusia">Fusia</h1>
-            <p class="tagline" data-en="Intelligent Tools Hub" data-fr="Hub d'Outils Intelligents">Intelligent Tools Hub</p>
-            <p class="subtitle" data-en="Created by Mydd - Powered by AI" data-fr="Créé par Mydd - Propulsé par l'IA">Created by Mydd - Powered by AI</p>
+            <h1 class="logo">Fusia</h1>
+            <p class="tagline">Hub d'Outils Intelligents</p>
+            <p class="subtitle">Créé par Mydd - Propulsé par l'IA</p>
         </header>
 
         <main>
@@ -629,50 +603,44 @@
                 <!-- WikiSummarizer Card -->
                 <div class="tool-card">
                     <div class="tool-icon">📚</div>
-                    <h2 class="tool-title" data-en="WikiSummarizer" data-fr="WikiSummarizer">WikiSummarizer</h2>
-                    <div class="tool-status status-active" data-en="Active" data-fr="Actif">Active</div>
-                    <p class="tool-description" 
-                       data-en="Smart Wikipedia summaries with Mistral AI. Get clear and precise summaries in multiple languages."
-                       data-fr="Résumés intelligents de Wikipedia avec Mistral AI. Obtenez des synthèses claires et précises en plusieurs langues.">
-                        Smart Wikipedia summaries with Mistral AI. Get clear and precise summaries in multiple languages.
+                    <h2 class="tool-title">WikiSummarizer</h2>
+                    <div class="tool-status status-active">Actif</div>
+                    <p class="tool-description">
+                        Résumés intelligents de Wikipedia avec Mistral AI. Obtenez des synthèses claires et précises en plusieurs langues.
                     </p>
                     <div class="tool-features">
                         <ul>
-                            <li data-en="Multilingual support (FR, EN, ES)" data-fr="Support multilingue (FR, EN, ES)">Multilingual support (FR, EN, ES)</li>
-                            <li data-en="Customizable summaries (short, medium, long)" data-fr="Résumés personnalisables (court, moyen, long)">Customizable summaries (short, medium, long)</li>
-                            <li data-en="Specialized thematic modes" data-fr="Modes thématiques spécialisés">Specialized thematic modes</li>
-                            <li data-en="Modern and intuitive interface" data-fr="Interface moderne et intuitive">Modern and intuitive interface</li>
-                            <li data-en="Smart cache and statistics" data-fr="Cache intelligent et statistiques">Smart cache and statistics</li>
+                            <li>Support multilingue (FR, EN, ES)</li>
+                            <li>Résumés personnalisables (court, moyen, long)</li>
+                            <li>Modes thématiques spécialisés</li>
+                            <li>Interface moderne et intuitive</li>
+                            <li>Cache intelligent et statistiques</li>
                         </ul>
                     </div>
-                    <button class="tool-button" onclick="openWikiSummarizer()" 
-                            data-en="Access WikiSummarizer" data-fr="Accéder à WikiSummarizer">
-                        Access WikiSummarizer
+                    <button class="tool-button" onclick="openWikiSummarizer()">
+                        Accéder à WikiSummarizer
                     </button>
                 </div>
 
                 <!-- Mathia Card -->
                 <div class="tool-card">
                     <div class="tool-icon">🔢</div>
-                    <h2 class="tool-title" data-en="Mathia" data-fr="Mathia">Mathia</h2>
-                    <div class="tool-status status-development" data-en="In Development" data-fr="En développement">In Development</div>
-                    <p class="tool-description"
-                       data-en="Intelligent mathematical assistant combining calculations, visualizations and theory for mathematics help."
-                       data-fr="Assistant mathématique intelligent combinant calculs, visualisations et théorie pour l'aide aux mathématiques.">
-                        Intelligent mathematical assistant combining calculations, visualizations and theory for mathematics help.
+                    <h2 class="tool-title">Mathia</h2>
+                    <div class="tool-status status-development">En développement</div>
+                    <p class="tool-description">
+                        Assistant mathématique intelligent combinant calculs, visualisations et théorie pour l'aide aux mathématiques.
                     </p>
                     <div class="tool-features">
                         <ul>
-                            <li data-en="Function and equation calculations" data-fr="Calcul de fonctions et équations">Function and equation calculations</li>
-                            <li data-en="Interactive graphics with zoom" data-fr="Graphiques interactifs avec zoom">Interactive graphics with zoom</li>
-                            <li data-en="Theorem library" data-fr="Bibliothèque de théorèmes">Theorem library</li>
-                            <li data-en="Integrated AI assistant" data-fr="Assistant IA intégré">Integrated AI assistant</li>
-                            <li data-en="Clean scientific interface" data-fr="Interface scientifique épurée">Clean scientific interface</li>
+                            <li>Calcul de fonctions et équations</li>
+                            <li>Graphiques interactifs avec zoom</li>
+                            <li>Bibliothèque de théorèmes</li>
+                            <li>Assistant IA intégré</li>
+                            <li>Interface scientifique épurée</li>
                         </ul>
                     </div>
-                    <button class="tool-button" onclick="openMathia()"
-                            data-en="Access Mathia" data-fr="Accéder à Mathia">
-                        Access Mathia
+                    <button class="tool-button" onclick="openMathia()">
+                        Accéder à Mathia
                     </button>
                 </div>
             </div>
@@ -681,46 +649,15 @@
         <footer>
             <div class="footer-links">
                 <a href="https://github.com/myddxyz/fusia" class="footer-link" target="_blank">GitHub</a>
-                <a href="#" class="footer-link" onclick="showAbout()" data-en="About" data-fr="À propos">About</a>
-                <a href="#" class="footer-link" onclick="showContact()" data-en="Contact" data-fr="Contact">Contact</a>
+                <a href="#" class="footer-link" onclick="showAbout()">À propos</a>
+                <a href="#" class="footer-link" onclick="showContact()">Contact</a>
             </div>
-            <p data-en="&copy; 2024 Fusia by Mydd. All rights reserved." data-fr="&copy; 2024 Fusia by Mydd. Tous droits réservés.">&copy; 2024 Fusia by Mydd. All rights reserved.</p>
+            <p>&copy; 2024 Fusia by Mydd. Tous droits réservés.</p>
         </footer>
     </div>
 
     <script>
-        // Language system
-        const translations = {
-            en: {
-                welcomeMessage: 'Welcome to Fusia! Select a tool to get started.',
-                aboutMessage: 'Fusia is an intelligent tools hub created by Mydd to democratize access to information and educational tools.',
-                contactMessage: 'Find me on GitHub: github.com/myddxyz'
-            },
-            fr: {
-                welcomeMessage: 'Bienvenue sur Fusia ! Sélectionnez un outil pour commencer.',
-                aboutMessage: 'Fusia est un hub d\'outils intelligents créé par Mydd pour démocratiser l\'accès à l\'information et aux outils éducatifs.',
-                contactMessage: 'Retrouvez-moi sur GitHub : github.com/myddxyz'
-            }
-        };
-
-        let currentLanguage = 'en';
-
-        function changeLanguage(lang) {
-            currentLanguage = lang;
-            document.documentElement.lang = lang;
-            
-            document.querySelectorAll('[data-en][data-fr]').forEach(element => {
-                const text = element.getAttribute(`data-${lang}`);
-                if (text) {
-                    element.innerHTML = text;
-                }
-            });
-            
-            const message = lang === 'en' ? 'Language changed to English' : 'Langue changée vers le français';
-            showNotification(message, 'info');
-        }
-
-        // Navigation functions - Flask routes
+        // Navigation functions - VOS LIENS ORIGINAUX CONSERVÉS
         function openWikiSummarizer() {
             window.location.href = '/wikisummarizer';
         }
@@ -730,14 +667,14 @@
         }
 
         function showAbout() {
-            showNotification(translations[currentLanguage].aboutMessage, 'info');
+            showNotification('Fusia est un hub d\'outils intelligents créé par Mydd pour démocratiser l\'accès à l\'information et aux outils éducatifs.', 'info');
         }
 
         function showContact() {
-            showNotification(translations[currentLanguage].contactMessage, 'info');
+            showNotification('Retrouvez-moi sur GitHub : github.com/myddxyz', 'info');
         }
 
-        // Notification system - same as original
+        // Système de notifications - IDENTIQUE À L'ORIGINAL
         function showNotification(message, type = 'info') {
             document.querySelectorAll('.notification').forEach(n => n.remove());
             
@@ -755,7 +692,7 @@
             }, 4000);
         }
 
-        // Enhanced interactive effects
+        // Effets interactifs améliorés
         document.addEventListener('DOMContentLoaded', function() {
             const toolCards = document.querySelectorAll('.tool-card');
             
@@ -769,6 +706,7 @@
                 });
             });
 
+            // Effet ripple sur les boutons
             const buttons = document.querySelectorAll('.tool-button');
             buttons.forEach(button => {
                 button.addEventListener('click', function(e) {
@@ -797,9 +735,9 @@
             });
         });
 
-        // Welcome message
+        // Message de bienvenue
         setTimeout(() => {
-            showNotification(translations[currentLanguage].welcomeMessage, 'info');
+            showNotification('Bienvenue sur Fusia ! Sélectionnez un outil pour commencer.', 'info');
         }, 1500);
     </script>
 </body>
