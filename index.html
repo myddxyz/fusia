@@ -1,28 +1,13 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fusia - Hub d'Outils Intelligents</title>
+    <title>Fusia - Intelligent Tools Hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-            --secondary-gradient: linear-gradient(135deg, #667eea, #764ba2);
-            --glass-bg: rgba(255, 255, 255, 0.1);
-            --glass-border: rgba(255, 255, 255, 0.2);
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255, 255, 255, 0.9);
-            --text-tertiary: rgba(255, 255, 255, 0.7);
-            --success-color: #2ecc71;
-            --warning-color: #f39c12;
-            --shadow-light: 0 8px 32px rgba(0, 0, 0, 0.1);
-            --shadow-medium: 0 15px 60px rgba(0, 0, 0, 0.2);
-            --shadow-heavy: 0 25px 80px rgba(0, 0, 0, 0.25);
-        }
-
         * {
             margin: 0;
             padding: 0;
@@ -31,7 +16,7 @@
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--primary-gradient);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
             min-height: 100vh;
             overflow-x: hidden;
             position: relative;
@@ -52,53 +37,51 @@
             z-index: -1;
         }
 
-        .floating-elements {
+        /* Language Selector */
+        .language-selector {
             position: fixed;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 0;
-        }
-
-        .floating-shape {
-            position: absolute;
-            opacity: 0.1;
-            animation: float 6s ease-in-out infinite;
-        }
-
-        .floating-shape:nth-child(1) {
-            top: 10%;
-            left: 10%;
-            width: 60px;
-            height: 60px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 50%;
-            animation-delay: 0s;
-        }
-
-        .floating-shape:nth-child(2) {
-            top: 70%;
-            right: 10%;
-            width: 80px;
-            height: 80px;
+            top: 25px;
+            left: 25px;
+            z-index: 1000;
             background: rgba(255, 255, 255, 0.15);
-            border-radius: 30%;
-            animation-delay: 2s;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            padding: 0.8rem 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
         }
 
-        .floating-shape:nth-child(3) {
-            top: 50%;
-            left: 5%;
-            width: 40px;
-            height: 40px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 20%;
-            animation-delay: 4s;
+        .language-selector:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 15px 60px rgba(0, 0, 0, 0.2);
         }
 
-        @keyframes float {
-            0%, 100% { transform: translateY(0px) rotate(0deg); }
-            50% { transform: translateY(-20px) rotate(180deg); }
+        .language-icon {
+            font-size: 1.2rem;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+        }
+
+        .language-select {
+            background: transparent;
+            border: none;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            outline: none;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .language-select option {
+            background: #333;
+            color: white;
+            padding: 0.5rem;
         }
 
         .container {
@@ -108,8 +91,6 @@
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-            position: relative;
-            z-index: 1;
         }
 
         header {
@@ -121,13 +102,15 @@
         .logo {
             font-size: 5rem;
             font-weight: 900;
-            color: var(--text-primary);
+            color: white;
             text-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
             background: linear-gradient(45deg, #fff, #f0f8ff, #e6f3ff);
+            background-size: 400% 400%;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
+            animation: gradient-shift 3s ease-in-out infinite;
             position: relative;
             display: inline-block;
         }
@@ -144,9 +127,14 @@
             border-radius: 2px;
         }
 
+        @keyframes gradient-shift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
         .tagline {
             font-size: 1.6rem;
-            color: var(--text-secondary);
+            color: rgba(255,255,255,0.9);
             font-weight: 400;
             letter-spacing: 1px;
             margin-bottom: 0.8rem;
@@ -155,7 +143,7 @@
 
         .subtitle {
             font-size: 1.1rem;
-            color: var(--text-tertiary);
+            color: rgba(255,255,255,0.7);
             font-weight: 300;
             font-style: italic;
         }
@@ -177,9 +165,9 @@
         }
 
         .tool-card {
-            background: var(--glass-bg);
+            background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(25px);
-            border: 1px solid var(--glass-border);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 30px;
             padding: 3.5rem 3rem;
             text-align: center;
@@ -187,7 +175,7 @@
             cursor: pointer;
             position: relative;
             overflow: hidden;
-            box-shadow: var(--shadow-light);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
         }
 
         .tool-card::before {
@@ -225,7 +213,7 @@
 
         .tool-card:hover {
             transform: translateY(-15px) scale(1.02);
-            box-shadow: var(--shadow-heavy);
+            box-shadow: 0 25px 80px rgba(0,0,0,0.25);
             background: rgba(255, 255, 255, 0.15);
         }
 
@@ -244,14 +232,14 @@
         .tool-title {
             font-size: 2.5rem;
             font-weight: 800;
-            color: var(--text-primary);
+            color: white;
             margin-bottom: 1.5rem;
             text-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .tool-description {
             font-size: 1.2rem;
-            color: var(--text-tertiary);
+            color: rgba(255,255,255,0.8);
             line-height: 1.7;
             margin-bottom: 2.5rem;
             font-weight: 400;
@@ -286,15 +274,27 @@
         }
 
         .status-active {
-            background: linear-gradient(45deg, var(--success-color), #27ae60);
+            background: linear-gradient(45deg, #2ecc71, #27ae60);
             color: white;
             box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3);
+            animation: pulse-green 2s ease-in-out infinite;
         }
 
         .status-development {
-            background: linear-gradient(45deg, var(--warning-color), #e67e22);
+            background: linear-gradient(45deg, #f39c12, #e67e22);
             color: white;
             box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);
+            animation: pulse-orange 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3); }
+            50% { box-shadow: 0 4px 25px rgba(46, 204, 113, 0.6); }
+        }
+
+        @keyframes pulse-orange {
+            0%, 100% { box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3); }
+            50% { box-shadow: 0 4px 25px rgba(243, 156, 18, 0.6); }
         }
 
         .tool-features {
@@ -308,7 +308,7 @@
 
         .tool-features ul {
             list-style: none;
-            color: var(--text-tertiary);
+            color: rgba(255,255,255,0.8);
         }
 
         .tool-features li {
@@ -321,14 +321,14 @@
         }
 
         .tool-features li:hover {
-            color: var(--text-secondary);
+            color: rgba(255,255,255,0.9);
         }
 
         .tool-features li::before {
             content: '✨';
             position: absolute;
             left: 0;
-            color: var(--success-color);
+            color: #2ecc71;
             font-size: 1.2rem;
             animation: sparkle 2s ease-in-out infinite;
         }
@@ -339,7 +339,7 @@
         }
 
         .tool-button {
-            background: var(--secondary-gradient);
+            background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
             border: none;
             padding: 1.2rem 2.5rem;
@@ -395,7 +395,7 @@
         footer {
             text-align: center;
             padding: 3rem 0;
-            color: var(--text-tertiary);
+            color: rgba(255,255,255,0.7);
             font-size: 1rem;
             margin-top: auto;
             background: rgba(255, 255, 255, 0.05);
@@ -412,7 +412,7 @@
         }
 
         .footer-link {
-            color: var(--text-secondary);
+            color: rgba(255,255,255,0.8);
             text-decoration: none;
             transition: all 0.3s ease;
             font-weight: 500;
@@ -428,13 +428,13 @@
             left: 50%;
             width: 0;
             height: 2px;
-            background: var(--text-primary);
+            background: white;
             transition: all 0.3s ease;
             transform: translateX(-50%);
         }
 
         .footer-link:hover {
-            color: var(--text-primary);
+            color: white;
             transform: translateY(-2px);
         }
 
@@ -509,7 +509,7 @@
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: var(--shadow-medium);
+            box-shadow: 0 15px 60px rgba(0, 0, 0, 0.2);
             max-width: 350px;
         }
 
@@ -518,11 +518,17 @@
         }
 
         .notification.info {
-            background: var(--secondary-gradient);
+            background: linear-gradient(135deg, #667eea, #764ba2);
         }
 
         /* Responsive Design */
         @media (max-width: 768px) {
+            .language-selector {
+                top: 15px;
+                left: 15px;
+                padding: 0.6rem 1rem;
+            }
+
             .container {
                 padding: 0 1.5rem;
             }
@@ -587,78 +593,18 @@
             }
         }
 
-        /* Language Selector */
-        .language-selector {
-            position: fixed;
-            top: 30px;
-            left: 30px;
-            z-index: 1000;
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            border-radius: 15px;
-            padding: 0.8rem 1.2rem;
-            display: flex;
-            align-items: center;
-            gap: 0.8rem;
-            transition: all 0.3s ease;
-            box-shadow: var(--shadow-light);
+        /* Ripple effect styles */
+        .tool-button {
+            position: relative;
+            overflow: hidden;
         }
 
-        .language-selector:hover {
-            background: rgba(255, 255, 255, 0.15);
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-medium);
-        }
-
-        .language-icon {
-            font-size: 1.2rem;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
-        }
-
-        .language-select {
-            background: transparent;
-            border: none;
-            color: var(--text-primary);
-            font-weight: 600;
-            font-size: 0.9rem;
-            cursor: pointer;
-            outline: none;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .language-select option {
-            background: #333;
-            color: white;
-            padding: 0.5rem;
-        }
-
-        @media (max-width: 768px) {
-            .language-selector {
-                top: 15px;
-                left: 15px;
-                padding: 0.6rem 1rem;
+        @keyframes ripple {
+            to {
+                transform: scale(4);
+                opacity: 0;
             }
         }
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.3);
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.5);
-        }
-
-
     </style>
 </head>
 <body>
@@ -671,13 +617,6 @@
         </select>
     </div>
 
-    <!-- Floating background elements -->
-    <div class="floating-elements">
-        <div class="floating-shape"></div>
-        <div class="floating-shape"></div>
-        <div class="floating-shape"></div>
-    </div>
-
     <div class="container">
         <header>
             <h1 class="logo" data-en="Fusia" data-fr="Fusia">Fusia</h1>
@@ -688,7 +627,7 @@
         <main>
             <div class="tools-grid">
                 <!-- WikiSummarizer Card -->
-                <div class="tool-card" data-tool="wikisummarizer">
+                <div class="tool-card">
                     <div class="tool-icon">📚</div>
                     <h2 class="tool-title" data-en="WikiSummarizer" data-fr="WikiSummarizer">WikiSummarizer</h2>
                     <div class="tool-status status-active" data-en="Active" data-fr="Actif">Active</div>
@@ -713,7 +652,7 @@
                 </div>
 
                 <!-- Mathia Card -->
-                <div class="tool-card" data-tool="mathia">
+                <div class="tool-card">
                     <div class="tool-icon">🔢</div>
                     <h2 class="tool-title" data-en="Mathia" data-fr="Mathia">Mathia</h2>
                     <div class="tool-status status-development" data-en="In Development" data-fr="En développement">In Development</div>
@@ -755,26 +694,21 @@
             en: {
                 welcomeMessage: 'Welcome to Fusia! Select a tool to get started.',
                 aboutMessage: 'Fusia is an intelligent tools hub created by Mydd to democratize access to information and educational tools.',
-                contactMessage: 'Find me on GitHub: github.com/myddxyz',
-                errorMessage: 'An unexpected error occurred. Please refresh the page.'
+                contactMessage: 'Find me on GitHub: github.com/myddxyz'
             },
             fr: {
                 welcomeMessage: 'Bienvenue sur Fusia ! Sélectionnez un outil pour commencer.',
                 aboutMessage: 'Fusia est un hub d\'outils intelligents créé par Mydd pour démocratiser l\'accès à l\'information et aux outils éducatifs.',
-                contactMessage: 'Retrouvez-moi sur GitHub : github.com/myddxyz',
-                errorMessage: 'Une erreur inattendue s\'est produite. Veuillez rafraîchir la page.'
+                contactMessage: 'Retrouvez-moi sur GitHub : github.com/myddxyz'
             }
         };
 
-        let currentLanguage = 'en'; // Default language
+        let currentLanguage = 'en';
 
         function changeLanguage(lang) {
             currentLanguage = lang;
-            
-            // Update HTML lang attribute
             document.documentElement.lang = lang;
             
-            // Update all elements with data attributes
             document.querySelectorAll('[data-en][data-fr]').forEach(element => {
                 const text = element.getAttribute(`data-${lang}`);
                 if (text) {
@@ -782,43 +716,16 @@
                 }
             });
             
-            // Save language preference
-            localStorage.setItem('fusia-language', lang);
-            
-            // Show language change notification
             const message = lang === 'en' ? 'Language changed to English' : 'Langue changée vers le français';
             showNotification(message, 'info');
-            
-            // Track language change
-            trackEvent('language_changed', { language: lang });
         }
 
-        // Load saved language preference
-        function loadLanguagePreference() {
-            const savedLang = localStorage.getItem('fusia-language');
-            if (savedLang && ['en', 'fr'].includes(savedLang)) {
-                currentLanguage = savedLang;
-                document.querySelector('.language-select').value = savedLang;
-                changeLanguage(savedLang);
-            }
-        }
-
-        // Show welcome notification on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            loadLanguagePreference();
-            setTimeout(() => {
-                showNotification(translations[currentLanguage].welcomeMessage, 'info');
-            }, 1500);
-        });
-
-        // Navigation functions (preserved from original)
+        // Navigation functions - EXACTLY like original
         function openWikiSummarizer() {
-            // Redirection vers WikiSummarizer
             window.location.href = '/wikisummarizer';
         }
 
         function openMathia() {
-            // Redirection vers Mathia
             window.location.href = '/mathia';
         }
 
@@ -830,135 +737,70 @@
             showNotification(translations[currentLanguage].contactMessage, 'info');
         }
 
-        // Enhanced notification system
+        // Notification system - same as original
         function showNotification(message, type = 'info') {
-            // Remove existing notifications
-            document.querySelectorAll('.notification').forEach(n => {
-                n.style.transform = 'translateX(400px)';
-                setTimeout(() => n.remove(), 300);
-            });
+            document.querySelectorAll('.notification').forEach(n => n.remove());
             
             const notification = document.createElement('div');
             notification.className = `notification ${type}`;
-            notification.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 1.2em;">${type === 'info' ? '💡' : '✨'}</span>
-                    <span>${message}</span>
-                </div>
-            `;
+            notification.textContent = message;
             
             document.body.appendChild(notification);
             
-            // Show notification with bounce effect
-            setTimeout(() => {
-                notification.classList.add('show');
-                notification.style.animation = 'bounceIn 0.5s ease-out';
-            }, 100);
+            setTimeout(() => notification.classList.add('show'), 100);
             
-            // Hide notification after 5 seconds
             setTimeout(() => {
                 notification.classList.remove('show');
-                setTimeout(() => notification.remove(), 400);
-            }, 5000);
+                setTimeout(() => notification.remove(), 300);
+            }, 4000);
         }
 
         // Enhanced interactive effects
         document.addEventListener('DOMContentLoaded', function() {
-            // Enhanced hover effects for tool cards
             const toolCards = document.querySelectorAll('.tool-card');
             
             toolCards.forEach(card => {
-                // Mouse move effect for subtle tilt
-                card.addEventListener('mousemove', function(e) {
-                    const rect = this.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    const centerX = rect.width / 2;
-                    const centerY = rect.height / 2;
-                    
-                    const rotateX = (y - centerY) / 20;
-                    const rotateY = (centerX - x) / 20;
-                    
-                    this.style.transform = `translateY(-15px) scale(1.02) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                card.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateY(-15px) scale(1.02)';
                 });
                 
                 card.addEventListener('mouseleave', function() {
-                    this.style.transform = 'translateY(0) scale(1) rotateX(0) rotateY(0)';
-                });
-
-                // Click effect
-                card.addEventListener('click', function() {
-                    this.style.transform = 'translateY(-15px) scale(0.98) rotateX(0) rotateY(0)';
-                    setTimeout(() => {
-                        this.style.transform = 'translateY(-15px) scale(1.02) rotateX(0) rotateY(0)';
-                    }, 150);
+                    this.style.transform = 'translateY(0) scale(1)';
                 });
             });
 
-            // Enhanced ripple effect for buttons
             const buttons = document.querySelectorAll('.tool-button');
             buttons.forEach(button => {
                 button.addEventListener('click', function(e) {
-                    // Create multiple ripples for enhanced effect
-                    for (let i = 0; i < 3; i++) {
-                        setTimeout(() => {
-                            createRipple(this, e, i);
-                        }, i * 100);
-                    }
-                });
-            });
-
-            function createRipple(button, e, index) {
-                const ripple = document.createElement('span');
-                const rect = button.getBoundingClientRect();
-                const size = Math.max(rect.width, rect.height);
-                const x = e.clientX - rect.left - size / 2;
-                const y = e.clientY - rect.top - size / 2;
-                
-                ripple.style.cssText = `
-                    position: absolute;
-                    width: ${size}px;
-                    height: ${size}px;
-                    top: ${y}px;
-                    left: ${x}px;
-                    background: rgba(255,255,255,${0.3 - index * 0.1});
-                    border-radius: 50%;
-                    transform: scale(0);
-                    animation: ripple ${0.6 + index * 0.2}s linear;
-                    pointer-events: none;
-                    z-index: 1;
-                `;
-                
-                button.appendChild(ripple);
-                
-                setTimeout(() => ripple.remove(), 1000);
-            }
-
-            // Parallax effect for floating shapes
-            document.addEventListener('mousemove', function(e) {
-                const shapes = document.querySelectorAll('.floating-shape');
-                const mouseX = e.clientX / window.innerWidth;
-                const mouseY = e.clientY / window.innerHeight;
-
-                shapes.forEach((shape, index) => {
-                    const speed = (index + 1) * 0.5;
-                    const x = (mouseX - 0.5) * speed * 50;
-                    const y = (mouseY - 0.5) * speed * 50;
+                    const ripple = document.createElement('span');
+                    const rect = this.getBoundingClientRect();
+                    const size = Math.max(rect.width, rect.height);
+                    const x = e.clientX - rect.left - size / 2;
+                    const y = e.clientY - rect.top - size / 2;
                     
-                    shape.style.transform = `translate(${x}px, ${y}px) rotate(${x * 0.5}deg)`;
+                    ripple.style.cssText = `
+                        position: absolute;
+                        width: ${size}px;
+                        height: ${size}px;
+                        top: ${y}px;
+                        left: ${x}px;
+                        background: rgba(255,255,255,0.3);
+                        border-radius: 50%;
+                        transform: scale(0);
+                        animation: ripple 0.6s linear;
+                        pointer-events: none;
+                    `;
+                    
+                    this.appendChild(ripple);
+                    setTimeout(() => ripple.remove(), 600);
                 });
             });
+        });
 
-            // Intersection Observer for scroll animations
-            const observerOptions = {
-                threshold: 0.1,
-                rootMargin: '0px 0px -50px 0px'
-            };
-
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        entry.target.style.opacity = '1';
-                        entry.target.style.transform = 'translateY(0)';
-                    }
-                });
+        // Welcome message
+        setTimeout(() => {
+            showNotification(translations[currentLanguage].welcomeMessage, 'info');
+        }, 1500);
+    </script>
+</body>
+</html>
