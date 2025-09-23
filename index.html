@@ -821,15 +821,7 @@
                 contactMessage: 'Retrouvez-moi sur GitHub : github.com/myddxyz',
                 themeLight: 'Mode clair activé',
                 themeDark: 'Mode sombre activé',
-                languageChanged: 'Langue changée vers le français',
-                quoteError: 'Impossible de charger une nouvelle citation. Réessayez plus tard.',
-                fallbackQuotes: [
-                    { content: "Le succès c'est d'aller d'échec en échec sans perdre son enthousiasme.", author: "Winston Churchill" },
-                    { content: "L'innovation distingue un leader d'un suiveur.", author: "Steve Jobs" },
-                    { content: "La seule façon de faire du bon travail est d'aimer ce que vous faites.", author: "Steve Jobs" },
-                    { content: "Il n'y a qu'une façon d'échouer, c'est d'abandonner avant d'avoir réussi.", author: "Georges Clemenceau" },
-                    { content: "Le meilleur moment pour planter un arbre était il y a 20 ans. Le deuxième meilleur moment est maintenant.", author: "Proverbe chinois" }
-                ]
+                languageChanged: 'Langue changée vers le français'
             },
             en: {
                 welcomeMessage: 'Welcome to Fusia! Select a tool to get started.',
@@ -837,20 +829,61 @@
                 contactMessage: 'Find me on GitHub: github.com/myddxyz',
                 themeLight: 'Light mode activated',
                 themeDark: 'Dark mode activated',
-                languageChanged: 'Language changed to English',
-                quoteError: 'Unable to load a new quote. Please try again later.',
-                fallbackQuotes: [
-                    { content: "Success is going from failure to failure without losing your enthusiasm.", author: "Winston Churchill" },
-                    { content: "Innovation distinguishes between a leader and a follower.", author: "Steve Jobs" },
-                    { content: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
-                    { content: "It is during our darkest moments that we must focus to see the light.", author: "Aristotle" },
-                    { content: "The best time to plant a tree was 20 years ago. The second best time is now.", author: "Chinese Proverb" }
-                ]
+                languageChanged: 'Language changed to English'
             }
+        };
+
+        // Grande collection de citations inspirantes
+        const quotesDatabase = {
+            fr: [
+                { content: "Le succès c'est d'aller d'échec en échec sans perdre son enthousiasme.", author: "Winston Churchill" },
+                { content: "L'innovation distingue un leader d'un suiveur.", author: "Steve Jobs" },
+                { content: "La seule façon de faire du bon travail est d'aimer ce que vous faites.", author: "Steve Jobs" },
+                { content: "Il n'y a qu'une façon d'échouer, c'est d'abandonner avant d'avoir réussi.", author: "Georges Clemenceau" },
+                { content: "Le meilleur moment pour planter un arbre était il y a 20 ans. Le deuxième meilleur moment est maintenant.", author: "Proverbe chinois" },
+                { content: "Vous manquez 100% des tirs que vous ne prenez pas.", author: "Wayne Gretzky" },
+                { content: "La technologie est mieux quand elle rapproche les gens.", author: "Matt Mullenweg" },
+                { content: "Votre travail va remplir une grande partie de votre vie, et la seule façon d'être vraiment satisfait est de faire ce que vous croyez être du bon travail.", author: "Steve Jobs" },
+                { content: "Les grandes réalisations nécessitent deux choses : un plan et pas assez de temps.", author: "Leonard Bernstein" },
+                { content: "L'avenir appartient à ceux qui croient en la beauté de leurs rêves.", author: "Eleanor Roosevelt" },
+                { content: "Ce n'est pas la montagne que nous conquérons, mais nous-mêmes.", author: "Sir Edmund Hillary" },
+                { content: "La créativité, c'est l'intelligence qui s'amuse.", author: "Albert Einstein" },
+                { content: "Soyez vous-même ; tout le monde est déjà pris.", author: "Oscar Wilde" },
+                { content: "La perfection n'est pas atteignable, mais si nous cherchons la perfection, nous pouvons atteindre l'excellence.", author: "Vince Lombardi" },
+                { content: "L'éducation est l'arme la plus puissante que vous pouvez utiliser pour changer le monde.", author: "Nelson Mandela" },
+                { content: "Dans vingt ans, vous serez plus déçu par les choses que vous n'avez pas faites que par celles que vous avez faites.", author: "Mark Twain" },
+                { content: "Le progrès est impossible sans changement, et ceux qui ne peuvent pas changer leur esprit ne peuvent rien changer.", author: "George Bernard Shaw" },
+                { content: "La vraie générosité envers l'avenir consiste à tout donner au présent.", author: "Albert Camus" },
+                { content: "Il faut viser la lune, car même en cas d'échec, on atterrit dans les étoiles.", author: "Oscar Wilde" },
+                { content: "Ce qui ne nous tue pas nous rend plus fort.", author: "Friedrich Nietzsche" }
+            ],
+            en: [
+                { content: "Success is going from failure to failure without losing your enthusiasm.", author: "Winston Churchill" },
+                { content: "Innovation distinguishes between a leader and a follower.", author: "Steve Jobs" },
+                { content: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
+                { content: "It is during our darkest moments that we must focus to see the light.", author: "Aristotle" },
+                { content: "The best time to plant a tree was 20 years ago. The second best time is now.", author: "Chinese Proverb" },
+                { content: "You miss 100% of the shots you don't take.", author: "Wayne Gretzky" },
+                { content: "Technology is best when it brings people together.", author: "Matt Mullenweg" },
+                { content: "Your work is going to fill a large part of your life, and the only way to be truly satisfied is to do what you believe is great work.", author: "Steve Jobs" },
+                { content: "Great achievements require two things: a plan and not enough time.", author: "Leonard Bernstein" },
+                { content: "The future belongs to those who believe in the beauty of their dreams.", author: "Eleanor Roosevelt" },
+                { content: "It is not the mountain we conquer, but ourselves.", author: "Sir Edmund Hillary" },
+                { content: "Creativity is intelligence having fun.", author: "Albert Einstein" },
+                { content: "Be yourself; everyone else is already taken.", author: "Oscar Wilde" },
+                { content: "Perfection is not attainable, but if we chase perfection we can catch excellence.", author: "Vince Lombardi" },
+                { content: "Education is the most powerful weapon which you can use to change the world.", author: "Nelson Mandela" },
+                { content: "Twenty years from now you will be more disappointed by the things that you didn't do than by the ones you did do.", author: "Mark Twain" },
+                { content: "Progress is impossible without change, and those who cannot change their minds cannot change anything.", author: "George Bernard Shaw" },
+                { content: "Real generosity toward the future lies in giving all to the present.", author: "Albert Camus" },
+                { content: "Shoot for the moon, even if you miss, you'll land among the stars.", author: "Oscar Wilde" },
+                { content: "What does not kill me, makes me stronger.", author: "Friedrich Nietzsche" }
+            ]
         };
 
         let currentLanguage = 'fr';
         let currentTheme = 'light';
+        let usedQuotes = [];
 
         // Initialisation au chargement
         document.addEventListener('DOMContentLoaded', function() {
@@ -885,6 +918,10 @@
             currentLanguage = lang;
             localStorage.setItem('fusia-language', lang);
             updateLanguage();
+            
+            // Recharger une citation dans la nouvelle langue
+            loadQuote();
+            
             showNotification(translations[lang].languageChanged, 'info');
         }
 
@@ -922,7 +959,7 @@
                 (currentLanguage === 'fr' ? 'Basculer vers le mode clair' : 'Switch to light mode');
         }
 
-        // Gestion des citations
+        // Fonction améliorée pour les citations avec API
         async function loadQuote() {
             const quoteText = document.getElementById('quote-text');
             const quoteAuthor = document.getElementById('quote-author');
@@ -933,30 +970,88 @@
             quoteAuthor.textContent = '';
             
             try {
-                // Tentative avec l'API Quotable
-                const response = await fetch('https://api.quotable.io/random?maxLength=150');
+                let quote = null;
                 
-                if (!response.ok) throw new Error('API Error');
+                // Essayer plusieurs APIs pour plus de variété
+                const apis = [
+                    // API 1: Quotable avec paramètres pour éviter les répétitions
+                    () => fetch(`https://api.quotable.io/random?minLength=30&maxLength=200&tags=inspirational,motivational,wisdom,success,technology`),
+                    
+                    // API 2: ZenQuotes
+                    () => fetch('https://zenquotes.io/api/random'),
+                    
+                    // API 3: Quotable sans filtres
+                    () => fetch('https://api.quotable.io/random?maxLength=180')
+                ];
                 
-                const data = await response.json();
+                // Essayer les APIs une par une
+                for (let i = 0; i < apis.length; i++) {
+                    try {
+                        const response = await apis[i]();
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            
+                            // Adapter selon le format de réponse
+                            if (i === 1) { // ZenQuotes
+                                if (data[0] && data[0].q && data[0].a) {
+                                    quote = {
+                                        content: data[0].q,
+                                        author: data[0].a
+                                    };
+                                    break;
+                                }
+                            } else { // Quotable
+                                if (data.content && data.author) {
+                                    quote = {
+                                        content: data.content,
+                                        author: data.author
+                                    };
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (apiError) {
+                        console.log(`API ${i + 1} failed:`, apiError);
+                        continue;
+                    }
+                }
                 
-                // Affichage de la citation
-                setTimeout(() => {
-                    quoteText.textContent = `"${data.content}"`;
-                    quoteAuthor.textContent = `— ${data.author}`;
-                    quoteText.style.opacity = '1';
-                }, 300);
+                // Si on a trouvé une citation
+                if (quote) {
+                    setTimeout(() => {
+                        quoteText.textContent = `"${quote.content}"`;
+                        quoteAuthor.textContent = `— ${quote.author}`;
+                        quoteText.style.opacity = '1';
+                    }, 300);
+                } else {
+                    throw new Error('All APIs failed');
+                }
                 
             } catch (error) {
-                console.log('API indisponible, utilisation des citations locales');
+                console.log('Toutes les APIs ont échoué, utilisation du fallback local');
                 
                 // Fallback vers les citations locales
-                const fallbackQuotes = translations[currentLanguage].fallbackQuotes;
-                const randomQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
+                const quotes = quotesDatabase[currentLanguage];
                 
+                // Réinitialiser si toutes les citations ont été utilisées
+                if (usedQuotes.length >= quotes.length) {
+                    usedQuotes = [];
+                }
+                
+                // Trouver une citation non utilisée
+                let availableQuotes = quotes.filter((_, index) => !usedQuotes.includes(index));
+                const randomIndex = Math.floor(Math.random() * availableQuotes.length);
+                const selectedQuote = availableQuotes[randomIndex];
+                
+                // Marquer la citation comme utilisée
+                const originalIndex = quotes.indexOf(selectedQuote);
+                usedQuotes.push(originalIndex);
+                
+                // Affichage avec animation
                 setTimeout(() => {
-                    quoteText.textContent = `"${randomQuote.content}"`;
-                    quoteAuthor.textContent = `— ${randomQuote.author}`;
+                    quoteText.textContent = `"${selectedQuote.content}"`;
+                    quoteAuthor.textContent = `— ${selectedQuote.author}`;
                     quoteText.style.opacity = '1';
                 }, 300);
             }
