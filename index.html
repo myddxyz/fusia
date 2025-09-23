@@ -720,8 +720,8 @@
             <div class="control-item language-selector">
                 <span class="language-icon">🌐</span>
                 <select class="language-select" onchange="changeLanguage(this.value)">
-                    <option value="fr" selected>FR</option>
-                    <option value="en">EN</option>
+                    <option value="en" selected>EN</option>
+                    <option value="fr">FR</option>
                 </select>
             </div>
             
@@ -737,15 +737,15 @@
     <div class="container">
         <header>
             <h1 class="logo">Fusia</h1>
-            <p class="tagline" data-fr="Hub d'Outils Intelligents" data-en="Intelligent Tools Hub">Hub d'Outils Intelligents</p>
-            <p class="subtitle" data-fr="Créé par Mydd - Propulsé par l'IA" data-en="Created by Mydd - Powered by AI">Créé par Mydd - Propulsé par l'IA</p>
+            <p class="tagline" data-fr="Hub d'Outils Intelligents" data-en="Intelligent Tools Hub">Intelligent Tools Hub</p>
+            <p class="subtitle" data-fr="Créé par Mydd - Propulsé par l'IA" data-en="Created by Mydd - Powered by AI">Created by Mydd - Powered by AI</p>
         </header>
 
         <!-- Citation du jour -->
         <div class="quote-container">
-            <div class="quote-text" id="quote-text">Chargement de la citation du jour...</div>
+            <div class="quote-text" id="quote-text">Loading today's quote...</div>
             <div class="quote-author" id="quote-author"></div>
-            <button class="quote-refresh" onclick="loadQuote()" data-fr="Nouvelle citation" data-en="New quote">Nouvelle citation</button>
+            <button class="quote-refresh" onclick="loadQuote()" data-fr="Nouvelle citation" data-en="New quote">New quote</button>
         </div>
 
         <main>
@@ -754,24 +754,24 @@
                 <div class="tool-card">
                     <div class="tool-icon">📚</div>
                     <h2 class="tool-title">WikiSummarizer</h2>
-                    <div class="tool-status status-active" data-fr="Actif" data-en="Active">Actif</div>
+                    <div class="tool-status status-active" data-fr="Actif" data-en="Active">Active</div>
                     <p class="tool-description" 
                        data-fr="Résumés intelligents de Wikipedia avec Mistral AI. Obtenez des synthèses claires et précises en plusieurs langues."
                        data-en="Smart Wikipedia summaries with Mistral AI. Get clear and precise summaries in multiple languages.">
-                        Résumés intelligents de Wikipedia avec Mistral AI. Obtenez des synthèses claires et précises en plusieurs langues.
+                        Smart Wikipedia summaries with Mistral AI. Get clear and precise summaries in multiple languages.
                     </p>
                     <div class="tool-features">
                         <ul>
-                            <li data-fr="Support multilingue (FR, EN, ES)" data-en="Multilingual support (FR, EN, ES)">Support multilingue (FR, EN, ES)</li>
-                            <li data-fr="Résumés personnalisables (court, moyen, long)" data-en="Customizable summaries (short, medium, long)">Résumés personnalisables (court, moyen, long)</li>
-                            <li data-fr="Modes thématiques spécialisés" data-en="Specialized thematic modes">Modes thématiques spécialisés</li>
-                            <li data-fr="Interface moderne et intuitive" data-en="Modern and intuitive interface">Interface moderne et intuitive</li>
-                            <li data-fr="Cache intelligent et statistiques" data-en="Smart cache and statistics">Cache intelligent et statistiques</li>
+                            <li data-fr="Support multilingue (FR, EN, ES)" data-en="Multilingual support (FR, EN, ES)">Multilingual support (FR, EN, ES)</li>
+                            <li data-fr="Résumés personnalisables (court, moyen, long)" data-en="Customizable summaries (short, medium, long)">Customizable summaries (short, medium, long)</li>
+                            <li data-fr="Modes thématiques spécialisés" data-en="Specialized thematic modes">Specialized thematic modes</li>
+                            <li data-fr="Interface moderne et intuitive" data-en="Modern and intuitive interface">Modern and intuitive interface</li>
+                            <li data-fr="Cache intelligent et statistiques" data-en="Smart cache and statistics">Smart cache and statistics</li>
                         </ul>
                     </div>
                     <button class="tool-button" onclick="openWikiSummarizer()" 
                             data-fr="Accéder à WikiSummarizer" data-en="Access WikiSummarizer">
-                        Accéder à WikiSummarizer
+                        Access WikiSummarizer
                     </button>
                 </div>
 
@@ -779,24 +779,24 @@
                 <div class="tool-card">
                     <div class="tool-icon">🔢</div>
                     <h2 class="tool-title">Mathia</h2>
-                    <div class="tool-status status-development" data-fr="En développement" data-en="In Development">En développement</div>
+                    <div class="tool-status status-development" data-fr="En développement" data-en="In Development">In Development</div>
                     <p class="tool-description"
                        data-fr="Assistant mathématique intelligent combinant calculs, visualisations et théorie pour l'aide aux mathématiques."
                        data-en="Intelligent mathematical assistant combining calculations, visualizations and theory for mathematics help.">
-                        Assistant mathématique intelligent combinant calculs, visualisations et théorie pour l'aide aux mathématiques.
+                        Intelligent mathematical assistant combining calculations, visualizations and theory for mathematics help.
                     </p>
                     <div class="tool-features">
                         <ul>
-                            <li data-fr="Calcul de fonctions et équations" data-en="Function and equation calculations">Calcul de fonctions et équations</li>
-                            <li data-fr="Graphiques interactifs avec zoom" data-en="Interactive graphics with zoom">Graphiques interactifs avec zoom</li>
-                            <li data-fr="Bibliothèque de théorèmes" data-en="Theorem library">Bibliothèque de théorèmes</li>
-                            <li data-fr="Assistant IA intégré" data-en="Integrated AI assistant">Assistant IA intégré</li>
-                            <li data-fr="Interface scientifique épurée" data-en="Clean scientific interface">Interface scientifique épurée</li>
+                            <li data-fr="Calcul de fonctions et équations" data-en="Function and equation calculations">Function and equation calculations</li>
+                            <li data-fr="Graphiques interactifs avec zoom" data-en="Interactive graphics with zoom">Interactive graphics with zoom</li>
+                            <li data-fr="Bibliothèque de théorèmes" data-en="Theorem library">Theorem library</li>
+                            <li data-fr="Assistant IA intégré" data-en="Integrated AI assistant">Integrated AI assistant</li>
+                            <li data-fr="Interface scientifique épurée" data-en="Clean scientific interface">Clean scientific interface</li>
                         </ul>
                     </div>
                     <button class="tool-button" onclick="openMathia()"
                             data-fr="Accéder à Mathia" data-en="Access Mathia">
-                        Accéder à Mathia
+                        Access Mathia
                     </button>
                 </div>
             </div>
@@ -805,10 +805,10 @@
         <footer>
             <div class="footer-links">
                 <a href="https://github.com/myddxyz/fusia" class="footer-link" target="_blank">GitHub</a>
-                <a href="#" class="footer-link" onclick="showAbout()" data-fr="À propos" data-en="About">À propos</a>
+                <a href="#" class="footer-link" onclick="showAbout()" data-fr="À propos" data-en="About">About</a>
                 <a href="#" class="footer-link" onclick="showContact()" data-fr="Contact" data-en="Contact">Contact</a>
             </div>
-            <p data-fr="&copy; 2024 Fusia by Mydd. Tous droits réservés." data-en="&copy; 2024 Fusia by Mydd. All rights reserved.">&copy; 2024 Fusia by Mydd. Tous droits réservés.</p>
+            <p data-fr="&copy; 2024 Fusia by Mydd. Tous droits réservés." data-en="&copy; 2024 Fusia by Mydd. All rights reserved.">&copy; 2024 Fusia by Mydd. All rights reserved.</p>
         </footer>
     </div>
 
@@ -881,14 +881,14 @@
             ]
         };
 
-        let currentLanguage = 'fr';
+        let currentLanguage = 'en';
         let currentTheme = 'light';
         let usedQuotes = [];
 
         // Initialisation au chargement
         document.addEventListener('DOMContentLoaded', function() {
             // Récupérer les préférences sauvegardées
-            const savedLanguage = localStorage.getItem('fusia-language') || 'fr';
+            const savedLanguage = localStorage.getItem('fusia-language') || 'en';
             const savedTheme = localStorage.getItem('fusia-theme') || 'light';
             
             // Appliquer les préférences
