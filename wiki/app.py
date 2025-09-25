@@ -74,9 +74,30 @@ class WikipediaMistralSummarizer:
                 print(f"Erreur avec clé {attempt + 1}: {str(e)}")
                 last_exception = e
                 self.current_key_index += 1
+                # Attendre entre les tentatives pour éviter rate limiting
+                if attempt < len(self.api_keys) - 1:
+                    time.sleep(2)
                 continue
         
-        raise Exception(f"Toutes les clés API ont échoué. Dernière erreur: {str(last_exception)}")
+        # Si toutes les clés ont échoué, utiliser un modèle moins cher
+        print("⚠️ Tentative avec modèle alternatif...")
+        try:
+            return self.retry_with_alternative_model(func, *args, **kwargs)
+        except:
+            raise Exception(f"Toutes les clés API ont échoué. Service temporairement indisponible. Dernière erreur: {str(last_exception)}")
+    
+    def retry_with_alternative_model(self, func, *args, **kwargs):
+        """Retry avec un modèle Mistral moins cher"""
+        for attempt in range(len(self.api_keys)):
+            try:
+                # Utiliser mistral-small au lieu de mistral-large
+                if hasattr(self, '_use_small_model'):
+                    result = func(*args, **kwargs)
+                    return result
+            except:
+                self.current_key_index += 1
+                continue
+        raise Exception("Tous les modèles ont échoué")
     
     def get_cache_key(self, theme, length_mode, language, mode):
         """Génère une clé de cache unique incluant la langue et le mode"""
@@ -251,12 +272,25 @@ Special focus for this summary:
             # Format correct pour Mistral AI v1.0.0
             messages = [{"role": "user", "content": base_prompt}]
             
-            response = client.chat.complete(
-                model="mistral-large-latest",
-                messages=messages,
-                temperature=0.2,
-                max_tokens=600
-            )
+            # Essayer d'abord avec le modèle standard, puis avec le modèle plus petit
+            try:
+                response = client.chat.complete(
+                    model="mistral-large-latest",
+                    messages=messages,
+                    temperature=0.2,
+                    max_tokens=600
+                )
+            except Exception as e:
+                if "429" in str(e) or "capacity exceeded" in str(e):
+                    print("⚠️ Rate limit atteint, utilisation du modèle small...")
+                    response = client.chat.complete(
+                        model="mistral-small-latest",
+                        messages=messages,
+                        temperature=0.2,
+                        max_tokens=600
+                    )
+                else:
+                    raise e
             
             return response.choices[0].message.content.strip()
         
@@ -294,12 +328,25 @@ Special focus for this explanation:
             
             messages = [{"role": "user", "content": base_prompt}]
             
-            response = client.chat.complete(
-                model="mistral-large-latest", 
-                messages=messages,
-                temperature=0.3,
-                max_tokens=600
-            )
+            # Essayer d'abord avec le modèle standard, puis avec le modèle plus petit
+            try:
+                response = client.chat.complete(
+                    model="mistral-large-latest", 
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=600
+                )
+            except Exception as e:
+                if "429" in str(e) or "capacity exceeded" in str(e):
+                    print("⚠️ Rate limit atteint, utilisation du modèle small...")
+                    response = client.chat.complete(
+                        model="mistral-small-latest",
+                        messages=messages,
+                        temperature=0.3,
+                        max_tokens=600
+                    )
+                else:
+                    raise e
             
             return response.choices[0].message.content.strip()
         
@@ -409,45 +456,64 @@ def index():
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         :root {
-            --bg-primary: #e6e7ee; --bg-secondary: #d1d2d9; --bg-tertiary: #fbfcff;
-            --text-primary: #5a5c69; --text-secondary: #8b8d97;
-            --accent: #667eea; --accent-secondary: #764ba2;
-            --shadow-light: #bebfc5; --shadow-dark: #ffffff;
+            --bg-primary: #f8fafc;
+            --bg-secondary: #e2e8f0;
+            --bg-tertiary: #ffffff;
+            --text-primary: #1a202c;
+            --text-secondary: #4a5568;
+            --accent: #667eea;
+            --accent-secondary: #764ba2;
+            --border: #e2e8f0;
+            --shadow: rgba(0, 0, 0, 0.1);
         }
         
         [data-theme="dark"] {
-            --bg-primary: #2d3748; --bg-secondary: #1a202c; --bg-tertiary: #4a5568;
-            --text-primary: #f7fafc; --text-secondary: #e2e8f0;
-            --shadow-light: #1a202c; --shadow-dark: #4a5568;
+            --bg-primary: #1a202c;
+            --bg-secondary: #2d3748;
+            --bg-tertiary: #4a5568;
+            --text-primary: #f7fafc;
+            --text-secondary: #e2e8f0;
+            --border: #4a5568;
+            --shadow: rgba(0, 0, 0, 0.3);
         }
         
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
-            min-height: 100vh; 
-            display: flex; 
+            min-height: 100vh;
+            display: flex;
             flex-direction: column;
             transition: all 0.3s ease;
         }
         
         .top-header {
             position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
             padding: 15px 30px;
             display: flex; justify-content: space-between; align-items: center;
         }
         
+        [data-theme="dark"] .top-header {
+            background: rgba(26, 32, 44, 0.25);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
         .back-button {
-            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 15px; padding: 10px 20px; color: white; text-decoration: none;
-            display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 0.9rem;
-            transition: all 0.3s ease; backdrop-filter: blur(20px);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 15px; padding: 10px 20px; 
+            color: var(--text-primary); text-decoration: none;
+            display: flex; align-items: center; gap: 10px; 
+            font-weight: 600; font-size: 0.9rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 10px var(--shadow);
         }
         
         .back-button:hover {
-            background: rgba(255, 255, 255, 0.2); transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px var(--shadow);
         }
         
         .header-controls {
@@ -455,27 +521,48 @@ def index():
         }
         
         .language-selector {
-            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 15px; padding: 10px 15px; cursor: pointer; font-size: 0.9rem;
-            color: white; transition: all 0.2s ease; backdrop-filter: blur(20px);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 15px; padding: 10px 15px; 
+            cursor: pointer; font-size: 0.9rem;
+            color: var(--text-primary); 
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 10px var(--shadow);
         }
         
-        .language-selector:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
+        .language-selector:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px var(--shadow);
+        }
         
         .theme-toggle {
-            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 15px; padding: 12px; cursor: pointer; font-size: 1.2rem; 
-            transition: all 0.2s ease; backdrop-filter: blur(20px); color: white;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 15px; padding: 12px; 
+            cursor: pointer; font-size: 1.2rem; 
+            transition: all 0.2s ease;
+            color: var(--text-primary);
+            box-shadow: 0 2px 10px var(--shadow);
         }
         
-        .theme-toggle:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
+        .theme-toggle:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px var(--shadow);
+        }
         
         .author-link {
-            font-size: 0.85rem; color: rgba(255,255,255,0.8); text-decoration: none;
-            font-weight: 500; transition: all 0.2s ease;
+            font-size: 0.85rem; 
+            color: var(--text-primary); 
+            text-decoration: none;
+            font-weight: 500; 
+            transition: all 0.2s ease;
+            opacity: 0.8;
         }
         
-        .author-link:hover { color: white; transform: translateY(-1px); }
+        .author-link:hover { 
+            opacity: 1; 
+            transform: translateY(-1px); 
+        }
         
         .container {
             flex: 1; padding: 100px 30px 30px; max-width: 1200px; margin: 0 auto; width: 100%;
@@ -491,21 +578,30 @@ def index():
             text-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
         
-        .subtitle { color: rgba(255,255,255,0.8); font-size: 1.1rem; }
+        .subtitle { 
+            color: rgba(255,255,255,0.9); 
+            font-size: 1.1rem; 
+        }
         
         .stats {
             display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; flex-wrap: wrap;
         }
         
         .stat-item {
-            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.2); padding: 10px 20px; border-radius: 15px;
-            font-size: 0.9rem; color: rgba(255,255,255,0.9);
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 10px 20px; border-radius: 15px;
+            font-size: 0.9rem; color: rgba(255,255,255,0.95);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
         
         .form-section {
-            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 25px; padding: 30px;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 25px; padding: 30px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
         }
         
         .form-group { margin-bottom: 25px; }
@@ -516,85 +612,119 @@ def index():
         
         .input {
             width: 100%; padding: 18px 24px; 
-            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.4);
             border-radius: 20px; font-size: 1rem; color: white; outline: none; 
-            transition: all 0.3s ease; backdrop-filter: blur(20px);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
         
         .input:focus {
-            background: rgba(255, 255, 255, 0.2); border-color: rgba(255, 255, 255, 0.5);
-            box-shadow: 0 0 0 3px rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.4);
+            border-color: rgba(255, 255, 255, 0.6);
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.2);
         }
         
-        .input::placeholder { color: rgba(255,255,255,0.7); }
+        .input::placeholder { color: rgba(255,255,255,0.8); }
         
         .length-selector { display: flex; gap: 15px; flex-wrap: wrap; }
         
         .length-btn {
-            background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 15px; padding: 12px 20px; font-size: 0.9rem; color: rgba(255,255,255,0.8);
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 15px; padding: 12px 20px; font-size: 0.9rem; 
+            color: rgba(255,255,255,0.9);
             cursor: pointer; transition: all 0.2s ease; flex: 1; min-width: 150px;
             backdrop-filter: blur(20px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
         
-        .length-btn:hover { transform: translateY(-2px); background: rgba(255, 255, 255, 0.15); }
+        .length-btn:hover { 
+            transform: translateY(-2px); 
+            background: rgba(255, 255, 255, 0.35);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
         
         .length-btn.active {
-            background: rgba(255, 255, 255, 0.3); color: white; 
-            border-color: rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.5); 
+            color: white; 
+            border-color: rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
         }
         
         .mode-selector { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
         
         .mode-chip {
-            background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 12px; padding: 8px 14px; font-size: 0.8rem; color: rgba(255,255,255,0.8);
-            cursor: pointer; transition: all 0.2s ease; backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px; padding: 8px 14px; font-size: 0.8rem; 
+            color: rgba(255,255,255,0.9);
+            cursor: pointer; transition: all 0.2s ease;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
         
         .mode-chip:hover { 
-            transform: translateY(-1px); background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-1px); 
+            background: rgba(255, 255, 255, 0.35);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
         }
         
         .mode-chip.active {
-            background: rgba(255, 255, 255, 0.3); color: white; transform: translateY(-1px);
-            border-color: rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.5); 
+            color: white; transform: translateY(-1px);
+            border-color: rgba(255, 255, 255, 0.6);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
         }
         
         .suggestions { margin-top: 15px; }
         .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
         
         .chip {
-            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 20px; padding: 8px 16px; font-size: 0.8rem; color: rgba(255,255,255,0.9);
-            cursor: pointer; transition: all 0.2s ease; backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px; padding: 8px 16px; font-size: 0.8rem; 
+            color: rgba(255,255,255,0.95);
+            cursor: pointer; transition: all 0.2s ease;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
         
         .chip:hover {
-            background: rgba(255, 255, 255, 0.3); color: white; transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.4); 
+            color: white; transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
         }
         
         .btn {
-            background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: 20px; padding: 18px 36px; font-size: 1.1rem; font-weight: 600;
-            color: rgba(255,255,255,0.9); cursor: pointer; transition: all 0.2s ease;
+            color: rgba(255,255,255,0.95); cursor: pointer; transition: all 0.2s ease;
             backdrop-filter: blur(20px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
         
         .btn:hover:not(:disabled) {
-            transform: translateY(-2px); background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px); 
+            background: rgba(255, 255, 255, 0.35);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
         }
         
         .btn:active { transform: translateY(0); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         
         .btn-primary {
-            background: rgba(255, 255, 255, 0.3); color: white;
+            background: rgba(255, 255, 255, 0.4); 
+            color: white;
             border-color: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
         }
         
         .btn-primary:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         }
         
         .controls {
@@ -603,9 +733,12 @@ def index():
         }
         
         .status {
-            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 20px;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
             padding: 25px; display: none;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
         }
         
         .status.active { display: block; animation: slideDown 0.3s ease; }
@@ -617,18 +750,21 @@ def index():
         
         .progress-bar {
             width: 100%; height: 8px; 
-            background: rgba(255, 255, 255, 0.2); border-radius: 10px; overflow: hidden;
+            background: rgba(255, 255, 255, 0.3); border-radius: 10px; overflow: hidden;
         }
         
         .progress-fill {
             height: 100%; border-radius: 10px; width: 0%; transition: width 0.3s ease;
-            background: linear-gradient(90deg, rgba(255,255,255,0.8), rgba(255,255,255,0.6));
+            background: linear-gradient(90deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7));
         }
         
         .result {
-            background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 25px;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 25px;
             padding: 30px; display: none; position: relative;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
         }
         
         .result.active { display: block; animation: slideUp 0.5s ease; }
@@ -640,64 +776,74 @@ def index():
         
         .result-title {
             color: white; font-size: 1.3rem; font-weight: 600;
-            padding-bottom: 15px; border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 15px; border-bottom: 2px solid rgba(255, 255, 255, 0.3);
             flex: 1; margin-right: 20px;
         }
         
         .copy-btn {
-            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: 12px; padding: 10px; cursor: pointer; font-size: 1rem; 
-            color: rgba(255,255,255,0.8); transition: all 0.2s ease; backdrop-filter: blur(20px);
+            color: rgba(255,255,255,0.9); transition: all 0.2s ease;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
         
         .copy-btn:hover {
-            transform: translateY(-2px); color: white; background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px); color: white; 
+            background: rgba(255, 255, 255, 0.35);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
         }
         
         .copy-btn.success { color: #4ade80; }
         
-        .result-meta { color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 20px; }
+        .result-meta { color: rgba(255,255,255,0.9); font-size: 0.9rem; margin-bottom: 20px; }
         
-        .result-content { color: rgba(255,255,255,0.9); line-height: 1.7; font-size: 1rem; }
+        .result-content { color: rgba(255,255,255,0.95); line-height: 1.7; font-size: 1rem; }
         .result-content p { margin-bottom: 15px; }
         .result-content strong { color: white; font-weight: 600; }
-        .result-content em { font-style: italic; color: rgba(255,255,255,0.95); }
+        .result-content em { font-style: italic; color: rgba(255,255,255,0.98); }
         
         .result-url {
             margin-top: 20px; padding: 15px; border-radius: 15px;
-            background: rgba(255, 255, 255, 0.1); border-left: 4px solid rgba(255,255,255,0.5);
+            background: rgba(255, 255, 255, 0.2); 
+            border-left: 4px solid rgba(255,255,255,0.6);
         }
         
         .result-url a {
-            color: rgba(255,255,255,0.9); text-decoration: none; font-weight: 500; word-break: break-all;
+            color: rgba(255,255,255,0.95); text-decoration: none; font-weight: 500; word-break: break-all;
         }
         
         .result-url a:hover { color: white; text-decoration: underline; }
         
         .loading {
             display: inline-block; width: 20px; height: 20px; margin-right: 10px;
-            border: 3px solid rgba(255,255,255,0.3); border-radius: 50%;
+            border: 3px solid rgba(255,255,255,0.4); border-radius: 50%;
             border-top-color: white; animation: spin 1s ease-in-out infinite;
         }
         
         .modal {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center;
-            z-index: 1000;
+            background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center;
+            z-index: 1000; backdrop-filter: blur(10px);
         }
         
         .modal.active { display: flex; animation: fadeIn 0.3s ease; }
         
         .modal-content {
-            background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(25px);
-            border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 25px; padding: 40px;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 25px; padding: 40px;
             max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;
             position: relative;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
         
         .modal-close {
             position: absolute; top: 20px; right: 20px; background: none;
-            border: none; font-size: 1.5rem; cursor: pointer; color: rgba(255,255,255,0.8);
+            border: none; font-size: 1.5rem; cursor: pointer; 
+            color: rgba(255,255,255,0.9);
             transition: color 0.2s ease;
         }
         
@@ -708,7 +854,7 @@ def index():
         }
         
         .modal p {
-            color: rgba(255,255,255,0.9); line-height: 1.6; margin-bottom: 15px;
+            color: rgba(255,255,255,0.95); line-height: 1.6; margin-bottom: 15px;
         }
         
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -787,7 +933,7 @@ def index():
                            data-placeholder-key="search_placeholder" required>
                     
                     <div class="suggestions">
-                        <span style="color: rgba(255,255,255,0.8); font-size: 0.9rem;">💡 <span data-text-key="popular_suggestions">Popular suggestions:</span></span>
+                        <span style="color: rgba(255,255,255,0.9); font-size: 0.9rem;">💡 <span data-text-key="popular_suggestions">Popular suggestions:</span></span>
                         <div class="suggestion-chips" id="suggestionChips"></div>
                     </div>
                 </div>
@@ -808,7 +954,7 @@ def index():
                 </div>
 
                 <div class="form-group">
-                    <label class="label">🎯 <span data-text-key="summary_mode">Summary mode</span> <small style="opacity: 0.7;">(<span data-text-key="optional">optional</span>)</small></label>
+                    <label class="label">🎯 <span data-text-key="summary_mode">Summary mode</span> <small style="opacity: 0.8;">(<span data-text-key="optional">optional</span>)</small></label>
                     <div class="mode-selector">
                         <button type="button" class="mode-chip active" onclick="selectMode('general', this)">
                             📋 <span data-text-key="mode_general">General</span>
@@ -1117,7 +1263,6 @@ def index():
             }
         }
 
-        // Toutes les autres fonctions restent identiques...
         function selectLength(length, element) {
             document.querySelectorAll('.length-btn').forEach(btn => btn.classList.remove('active'));
             element.classList.add('active');
