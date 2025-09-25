@@ -102,28 +102,74 @@
             transform: translateY(-2px);
         }
 
-        /* Sélecteur de langue */
+        /* Sélecteur de langue amélioré */
+        .language-selector {
+            cursor: pointer;
+            position: relative;
+        }
+
         .language-selector .language-icon {
             font-size: 1.2rem;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
         }
 
-        .language-select {
-            background: transparent;
-            border: none;
+        .language-display {
             color: var(--text-primary);
             font-weight: 600;
             font-size: 0.9rem;
-            cursor: pointer;
-            outline: none;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            min-width: 25px;
+            text-align: center;
         }
 
-        .language-select option {
-            background: #333;
-            color: white;
-            padding: 0.5rem;
+        .language-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            margin-top: 5px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(25px);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow-light);
+        }
+
+        .language-selector:hover .language-dropdown {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .language-option {
+            padding: 0.6rem 1rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .language-option:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        .language-option.active {
+            background: rgba(255, 255, 255, 0.15);
+            color: var(--text-primary);
+            font-weight: 600;
         }
 
         /* Toggle mode sombre */
@@ -716,13 +762,21 @@
     <!-- Controls fixes en haut -->
     <div class="top-controls">
         <div class="control-group">
-            <!-- Sélecteur de langue -->
+            <!-- Sélecteur de langue amélioré -->
             <div class="control-item language-selector">
                 <span class="language-icon">🌐</span>
-                <select class="language-select" onchange="changeLanguage(this.value)">
-                    <option value="en" selected>EN</option>
-                    <option value="fr">FR</option>
-                </select>
+                <span class="language-display" id="current-language">EN</span>
+                <div class="language-dropdown">
+                    <div class="language-option" onclick="changeLanguage('en')" data-lang="en">
+                        🇺🇸 EN
+                    </div>
+                    <div class="language-option" onclick="changeLanguage('fr')" data-lang="fr">
+                        🇫🇷 FR
+                    </div>
+                    <div class="language-option" onclick="changeLanguage('es')" data-lang="es">
+                        🇪🇸 ES
+                    </div>
+                </div>
             </div>
             
             <!-- Toggle mode sombre -->
@@ -737,15 +791,15 @@
     <div class="container">
         <header>
             <h1 class="logo">Fusia</h1>
-            <p class="tagline" data-fr="Hub d'Outils Intelligents" data-en="Intelligent Tools Hub">Intelligent Tools Hub</p>
-            <p class="subtitle" data-fr="Créé par Mydd - Propulsé par l'IA" data-en="Created by Mydd - Powered by AI">Created by Mydd - Powered by AI</p>
+            <p class="tagline" data-fr="Hub d'Outils Intelligents" data-en="Intelligent Tools Hub" data-es="Centro de Herramientas Inteligentes">Intelligent Tools Hub</p>
+            <p class="subtitle" data-fr="Créé par Mydd - Propulsé par l'IA" data-en="Created by Mydd - Powered by AI" data-es="Creado por Mydd - Impulsado por IA">Created by Mydd - Powered by AI</p>
         </header>
 
         <!-- Citation du jour -->
         <div class="quote-container">
             <div class="quote-text" id="quote-text">Loading today's quote...</div>
             <div class="quote-author" id="quote-author"></div>
-            <button class="quote-refresh" onclick="loadQuote()" data-fr="Nouvelle citation" data-en="New quote">New quote</button>
+            <button class="quote-refresh" onclick="loadQuote()" data-fr="Nouvelle citation" data-en="New quote" data-es="Nueva cita">New quote</button>
         </div>
 
         <main>
@@ -754,23 +808,24 @@
                 <div class="tool-card">
                     <div class="tool-icon">📚</div>
                     <h2 class="tool-title">WikiSummarizer</h2>
-                    <div class="tool-status status-active" data-fr="Actif" data-en="Active">Active</div>
+                    <div class="tool-status status-active" data-fr="Actif" data-en="Active" data-es="Activo">Active</div>
                     <p class="tool-description" 
                        data-fr="Résumés intelligents de Wikipedia avec Mistral AI. Obtenez des synthèses claires et précises en plusieurs langues."
-                       data-en="Smart Wikipedia summaries with Mistral AI. Get clear and precise summaries in multiple languages.">
+                       data-en="Smart Wikipedia summaries with Mistral AI. Get clear and precise summaries in multiple languages."
+                       data-es="Resúmenes inteligentes de Wikipedia con Mistral AI. Obtenga síntesis claras y precisas en múltiples idiomas.">
                         Smart Wikipedia summaries with Mistral AI. Get clear and precise summaries in multiple languages.
                     </p>
                     <div class="tool-features">
                         <ul>
-                            <li data-fr="Support multilingue (FR, EN, ES)" data-en="Multilingual support (FR, EN, ES)">Multilingual support (FR, EN, ES)</li>
-                            <li data-fr="Résumés personnalisables (court, moyen, long)" data-en="Customizable summaries (short, medium, long)">Customizable summaries (short, medium, long)</li>
-                            <li data-fr="Modes thématiques spécialisés" data-en="Specialized thematic modes">Specialized thematic modes</li>
-                            <li data-fr="Interface moderne et intuitive" data-en="Modern and intuitive interface">Modern and intuitive interface</li>
-                            <li data-fr="Cache intelligent et statistiques" data-en="Smart cache and statistics">Smart cache and statistics</li>
+                            <li data-fr="Support multilingue (FR, EN, ES)" data-en="Multilingual support (FR, EN, ES)" data-es="Soporte multiidioma (FR, EN, ES)">Multilingual support (FR, EN, ES)</li>
+                            <li data-fr="Résumés personnalisables (court, moyen, long)" data-en="Customizable summaries (short, medium, long)" data-es="Resúmenes personalizables (corto, medio, largo)">Customizable summaries (short, medium, long)</li>
+                            <li data-fr="Modes thématiques spécialisés" data-en="Specialized thematic modes" data-es="Modos temáticos especializados">Specialized thematic modes</li>
+                            <li data-fr="Interface moderne et intuitive" data-en="Modern and intuitive interface" data-es="Interfaz moderna e intuitiva">Modern and intuitive interface</li>
+                            <li data-fr="Cache intelligent et statistiques" data-en="Smart cache and statistics" data-es="Caché inteligente y estadísticas">Smart cache and statistics</li>
                         </ul>
                     </div>
                     <button class="tool-button" onclick="openWikiSummarizer()" 
-                            data-fr="Accéder à WikiSummarizer" data-en="Access WikiSummarizer">
+                            data-fr="Accéder à WikiSummarizer" data-en="Access WikiSummarizer" data-es="Acceder a WikiSummarizer">
                         Access WikiSummarizer
                     </button>
                 </div>
@@ -779,23 +834,24 @@
                 <div class="tool-card">
                     <div class="tool-icon">🔢</div>
                     <h2 class="tool-title">Mathia</h2>
-                    <div class="tool-status status-development" data-fr="En développement" data-en="In Development">In Development</div>
+                    <div class="tool-status status-development" data-fr="En développement" data-en="In Development" data-es="En desarrollo">In Development</div>
                     <p class="tool-description"
                        data-fr="Assistant mathématique intelligent combinant calculs, visualisations et théorie pour l'aide aux mathématiques."
-                       data-en="Intelligent mathematical assistant combining calculations, visualizations and theory for mathematics help.">
+                       data-en="Intelligent mathematical assistant combining calculations, visualizations and theory for mathematics help."
+                       data-es="Asistente matemático inteligente que combina cálculos, visualizaciones y teoría para ayuda matemática.">
                         Intelligent mathematical assistant combining calculations, visualizations and theory for mathematics help.
                     </p>
                     <div class="tool-features">
                         <ul>
-                            <li data-fr="Calcul de fonctions et équations" data-en="Function and equation calculations">Function and equation calculations</li>
-                            <li data-fr="Graphiques interactifs avec zoom" data-en="Interactive graphics with zoom">Interactive graphics with zoom</li>
-                            <li data-fr="Bibliothèque de théorèmes" data-en="Theorem library">Theorem library</li>
-                            <li data-fr="Assistant IA intégré" data-en="Integrated AI assistant">Integrated AI assistant</li>
-                            <li data-fr="Interface scientifique épurée" data-en="Clean scientific interface">Clean scientific interface</li>
+                            <li data-fr="Calcul de fonctions et équations" data-en="Function and equation calculations" data-es="Cálculos de funciones y ecuaciones">Function and equation calculations</li>
+                            <li data-fr="Graphiques interactifs avec zoom" data-en="Interactive graphics with zoom" data-es="Gráficos interactivos con zoom">Interactive graphics with zoom</li>
+                            <li data-fr="Bibliothèque de théorèmes" data-en="Theorem library" data-es="Biblioteca de teoremas">Theorem library</li>
+                            <li data-fr="Assistant IA intégré" data-en="Integrated AI assistant" data-es="Asistente IA integrado">Integrated AI assistant</li>
+                            <li data-fr="Interface scientifique épurée" data-en="Clean scientific interface" data-es="Interfaz científica limpia">Clean scientific interface</li>
                         </ul>
                     </div>
                     <button class="tool-button" onclick="openMathia()"
-                            data-fr="Accéder à Mathia" data-en="Access Mathia">
+                            data-fr="Accéder à Mathia" data-en="Access Mathia" data-es="Acceder a Mathia">
                         Access Mathia
                     </button>
                 </div>
@@ -805,15 +861,15 @@
         <footer>
             <div class="footer-links">
                 <a href="https://github.com/myddxyz/fusia" class="footer-link" target="_blank">GitHub</a>
-                <a href="#" class="footer-link" onclick="showAbout()" data-fr="À propos" data-en="About">About</a>
-                <a href="#" class="footer-link" onclick="showContact()" data-fr="Contact" data-en="Contact">Contact</a>
+                <a href="#" class="footer-link" onclick="showAbout()" data-fr="À propos" data-en="About" data-es="Acerca de">About</a>
+                <a href="#" class="footer-link" onclick="showContact()" data-fr="Contact" data-en="Contact" data-es="Contacto">Contact</a>
             </div>
-            <p data-fr="&copy; 2024 Fusia by Mydd. Tous droits réservés." data-en="&copy; 2024 Fusia by Mydd. All rights reserved.">&copy; 2024 Fusia by Mydd. All rights reserved.</p>
+            <p data-fr="&copy; 2024 Fusia by Mydd. Tous droits réservés." data-en="&copy; 2024 Fusia by Mydd. All rights reserved." data-es="&copy; 2024 Fusia by Mydd. Todos los derechos reservados.">&copy; 2024 Fusia by Mydd. All rights reserved.</p>
         </footer>
     </div>
 
     <script>
-        // Système de langues avec traductions
+        // Système de langues avec traductions étendues
         const translations = {
             fr: {
                 welcomeMessage: 'Bienvenue sur Fusia ! Sélectionnez un outil pour commencer.',
@@ -821,7 +877,9 @@
                 contactMessage: 'Retrouvez-moi sur GitHub : github.com/myddxyz',
                 themeLight: 'Mode clair activé',
                 themeDark: 'Mode sombre activé',
-                languageChanged: 'Langue changée vers le français'
+                languageChanged: 'Langue changée vers le français',
+                loading: 'Chargement...',
+                newQuote: 'Nouvelle citation'
             },
             en: {
                 welcomeMessage: 'Welcome to Fusia! Select a tool to get started.',
@@ -829,61 +887,53 @@
                 contactMessage: 'Find me on GitHub: github.com/myddxyz',
                 themeLight: 'Light mode activated',
                 themeDark: 'Dark mode activated',
-                languageChanged: 'Language changed to English'
+                languageChanged: 'Language changed to English',
+                loading: 'Loading...',
+                newQuote: 'New quote'
+            },
+            es: {
+                welcomeMessage: '¡Bienvenido a Fusia! Seleccione una herramienta para comenzar.',
+                aboutMessage: 'Fusia es un centro de herramientas inteligentes creado por Mydd para democratizar el acceso a la información y las herramientas educativas.',
+                contactMessage: 'Encuéntrame en GitHub: github.com/myddxyz',
+                themeLight: 'Modo claro activado',
+                themeDark: 'Modo oscuro activado',
+                languageChanged: 'Idioma cambiado al español',
+                loading: 'Cargando...',
+                newQuote: 'Nueva cita'
             }
         };
 
-        // Grande collection de citations inspirantes
-        const quotesDatabase = {
-            fr: [
-                { content: "Le succès c'est d'aller d'échec en échec sans perdre son enthousiasme.", author: "Winston Churchill" },
-                { content: "L'innovation distingue un leader d'un suiveur.", author: "Steve Jobs" },
-                { content: "La seule façon de faire du bon travail est d'aimer ce que vous faites.", author: "Steve Jobs" },
-                { content: "Il n'y a qu'une façon d'échouer, c'est d'abandonner avant d'avoir réussi.", author: "Georges Clemenceau" },
-                { content: "Le meilleur moment pour planter un arbre était il y a 20 ans. Le deuxième meilleur moment est maintenant.", author: "Proverbe chinois" },
-                { content: "Vous manquez 100% des tirs que vous ne prenez pas.", author: "Wayne Gretzky" },
-                { content: "La technologie est mieux quand elle rapproche les gens.", author: "Matt Mullenweg" },
-                { content: "Votre travail va remplir une grande partie de votre vie, et la seule façon d'être vraiment satisfait est de faire ce que vous croyez être du bon travail.", author: "Steve Jobs" },
-                { content: "Les grandes réalisations nécessitent deux choses : un plan et pas assez de temps.", author: "Leonard Bernstein" },
-                { content: "L'avenir appartient à ceux qui croient en la beauté de leurs rêves.", author: "Eleanor Roosevelt" },
-                { content: "Ce n'est pas la montagne que nous conquérons, mais nous-mêmes.", author: "Sir Edmund Hillary" },
-                { content: "La créativité, c'est l'intelligence qui s'amuse.", author: "Albert Einstein" },
-                { content: "Soyez vous-même ; tout le monde est déjà pris.", author: "Oscar Wilde" },
-                { content: "La perfection n'est pas atteignable, mais si nous cherchons la perfection, nous pouvons atteindre l'excellence.", author: "Vince Lombardi" },
-                { content: "L'éducation est l'arme la plus puissante que vous pouvez utiliser pour changer le monde.", author: "Nelson Mandela" },
-                { content: "Dans vingt ans, vous serez plus déçu par les choses que vous n'avez pas faites que par celles que vous avez faites.", author: "Mark Twain" },
-                { content: "Le progrès est impossible sans changement, et ceux qui ne peuvent pas changer leur esprit ne peuvent rien changer.", author: "George Bernard Shaw" },
-                { content: "La vraie générosité envers l'avenir consiste à tout donner au présent.", author: "Albert Camus" },
-                { content: "Il faut viser la lune, car même en cas d'échec, on atterrit dans les étoiles.", author: "Oscar Wilde" },
-                { content: "Ce qui ne nous tue pas nous rend plus fort.", author: "Friedrich Nietzsche" }
-            ],
+        // Citations de fallback pour chaque langue
+        const fallbackQuotes = {
             en: [
-                { content: "Success is going from failure to failure without losing your enthusiasm.", author: "Winston Churchill" },
-                { content: "Innovation distinguishes between a leader and a follower.", author: "Steve Jobs" },
                 { content: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
-                { content: "It is during our darkest moments that we must focus to see the light.", author: "Aristotle" },
-                { content: "The best time to plant a tree was 20 years ago. The second best time is now.", author: "Chinese Proverb" },
-                { content: "You miss 100% of the shots you don't take.", author: "Wayne Gretzky" },
-                { content: "Technology is best when it brings people together.", author: "Matt Mullenweg" },
-                { content: "Your work is going to fill a large part of your life, and the only way to be truly satisfied is to do what you believe is great work.", author: "Steve Jobs" },
-                { content: "Great achievements require two things: a plan and not enough time.", author: "Leonard Bernstein" },
+                { content: "Innovation distinguishes between a leader and a follower.", author: "Steve Jobs" },
+                { content: "Success is going from failure to failure without losing your enthusiasm.", author: "Winston Churchill" },
                 { content: "The future belongs to those who believe in the beauty of their dreams.", author: "Eleanor Roosevelt" },
-                { content: "It is not the mountain we conquer, but ourselves.", author: "Sir Edmund Hillary" },
-                { content: "Creativity is intelligence having fun.", author: "Albert Einstein" },
-                { content: "Be yourself; everyone else is already taken.", author: "Oscar Wilde" },
-                { content: "Perfection is not attainable, but if we chase perfection we can catch excellence.", author: "Vince Lombardi" },
-                { content: "Education is the most powerful weapon which you can use to change the world.", author: "Nelson Mandela" },
-                { content: "Twenty years from now you will be more disappointed by the things that you didn't do than by the ones you did do.", author: "Mark Twain" },
-                { content: "Progress is impossible without change, and those who cannot change their minds cannot change anything.", author: "George Bernard Shaw" },
-                { content: "Real generosity toward the future lies in giving all to the present.", author: "Albert Camus" },
-                { content: "Shoot for the moon, even if you miss, you'll land among the stars.", author: "Oscar Wilde" },
-                { content: "What does not kill me, makes me stronger.", author: "Friedrich Nietzsche" }
+                { content: "Technology is best when it brings people together.", author: "Matt Mullenweg" },
+                { content: "Creativity is intelligence having fun.", author: "Albert Einstein" }
+            ],
+            fr: [
+                { content: "La seule façon de faire du bon travail est d'aimer ce que vous faites.", author: "Steve Jobs" },
+                { content: "L'innovation distingue un leader d'un suiveur.", author: "Steve Jobs" },
+                { content: "Le succès c'est d'aller d'échec en échec sans perdre son enthousiasme.", author: "Winston Churchill" },
+                { content: "L'avenir appartient à ceux qui croient en la beauté de leurs rêves.", author: "Eleanor Roosevelt" },
+                { content: "La technologie est meilleure quand elle rapproche les gens.", author: "Matt Mullenweg" },
+                { content: "La créativité, c'est l'intelligence qui s'amuse.", author: "Albert Einstein" }
+            ],
+            es: [
+                { content: "La única manera de hacer un gran trabajo es amar lo que haces.", author: "Steve Jobs" },
+                { content: "La innovación distingue entre un líder y un seguidor.", author: "Steve Jobs" },
+                { content: "El éxito es ir de fracaso en fracaso sin perder el entusiasmo.", author: "Winston Churchill" },
+                { content: "El futuro pertenece a quienes creen en la belleza de sus sueños.", author: "Eleanor Roosevelt" },
+                { content: "La tecnología es mejor cuando acerca a las personas.", author: "Matt Mullenweg" },
+                { content: "La creatividad es la inteligencia divirtiéndose.", author: "Albert Einstein" }
             ]
         };
 
         let currentLanguage = 'en';
         let currentTheme = 'light';
-        let usedQuotes = [];
+        let usedFallbackQuotes = { en: [], fr: [], es: [] };
 
         // Initialisation au chargement
         document.addEventListener('DOMContentLoaded', function() {
@@ -896,7 +946,7 @@
             currentTheme = savedTheme;
             
             // Mettre à jour l'interface
-            document.querySelector('.language-select').value = currentLanguage;
+            updateLanguageDisplay();
             document.body.setAttribute('data-theme', currentTheme);
             updateThemeIcon();
             updateLanguage();
@@ -913,10 +963,11 @@
             setupInteractiveEffects();
         });
 
-        // Gestion des langues
+        // Gestion des langues améliorée
         function changeLanguage(lang) {
             currentLanguage = lang;
             localStorage.setItem('fusia-language', lang);
+            updateLanguageDisplay();
             updateLanguage();
             
             // Recharger une citation dans la nouvelle langue
@@ -925,11 +976,27 @@
             showNotification(translations[lang].languageChanged, 'info');
         }
 
+        function updateLanguageDisplay() {
+            const display = document.getElementById('current-language');
+            const options = document.querySelectorAll('.language-option');
+            
+            // Mettre à jour l'affichage principal
+            display.textContent = currentLanguage.toUpperCase();
+            
+            // Mettre à jour les options actives
+            options.forEach(option => {
+                option.classList.remove('active');
+                if (option.getAttribute('data-lang') === currentLanguage) {
+                    option.classList.add('active');
+                }
+            });
+        }
+
         function updateLanguage() {
             document.documentElement.lang = currentLanguage;
             
             // Mettre à jour tous les éléments avec traductions
-            document.querySelectorAll('[data-fr][data-en]').forEach(element => {
+            document.querySelectorAll('[data-fr][data-en][data-es]').forEach(element => {
                 const text = element.getAttribute(`data-${currentLanguage}`);
                 if (text) {
                     element.innerHTML = text;
@@ -954,70 +1021,63 @@
             icon.textContent = currentTheme === 'light' ? '🌙' : '☀️';
             
             const toggle = document.querySelector('.theme-toggle');
-            toggle.title = currentTheme === 'light' ? 
-                (currentLanguage === 'fr' ? 'Basculer vers le mode sombre' : 'Switch to dark mode') :
-                (currentLanguage === 'fr' ? 'Basculer vers le mode clair' : 'Switch to light mode');
+            const titleMap = {
+                fr: currentTheme === 'light' ? 'Basculer vers le mode sombre' : 'Basculer vers le mode clair',
+                en: currentTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode',
+                es: currentTheme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'
+            };
+            toggle.title = titleMap[currentLanguage];
         }
 
-        // Fonction améliorée pour les citations avec API
+        // Fonction améliorée pour les citations avec l'API Quotable
         async function loadQuote() {
             const quoteText = document.getElementById('quote-text');
             const quoteAuthor = document.getElementById('quote-author');
             
             // Animation de chargement
             quoteText.style.opacity = '0.5';
-            quoteText.textContent = currentLanguage === 'fr' ? 'Chargement...' : 'Loading...';
+            quoteText.textContent = translations[currentLanguage].loading;
             quoteAuthor.textContent = '';
             
             try {
+                // Essayer l'API Quotable avec différentes stratégies
                 let quote = null;
                 
-                // Essayer plusieurs APIs pour plus de variété
-                const apis = [
-                    // API 1: Quotable avec paramètres pour éviter les répétitions
-                    () => fetch(`https://api.quotable.io/random?minLength=30&maxLength=200&tags=inspirational,motivational,wisdom,success,technology`),
-                    
-                    // API 2: ZenQuotes
-                    () => fetch('https://zenquotes.io/api/random'),
-                    
-                    // API 3: Quotable sans filtres
-                    () => fetch('https://api.quotable.io/random?maxLength=180')
+                // Configuration des tags selon la langue
+                const inspirationalTags = 'inspirational,motivational,wisdom,success,technology,science,life,happiness';
+                
+                // Essayer plusieurs endpoints de l'API Quotable
+                const endpoints = [
+                    `https://api.quotable.io/quotes/random?tags=${inspirationalTags}&minLength=30&maxLength=180`,
+                    `https://api.quotable.io/quotes/random?minLength=40&maxLength=150`,
+                    `https://api.quotable.io/quotes/random?tags=wisdom,success&maxLength=200`,
+                    'https://api.quotable.io/quotes/random'
                 ];
                 
-                // Essayer les APIs une par une
-                for (let i = 0; i < apis.length; i++) {
+                for (let endpoint of endpoints) {
                     try {
-                        const response = await apis[i]();
-                        
+                        const response = await fetch(endpoint);
                         if (response.ok) {
                             const data = await response.json();
                             
-                            // Adapter selon le format de réponse
-                            if (i === 1) { // ZenQuotes
-                                if (data[0] && data[0].q && data[0].a) {
-                                    quote = {
-                                        content: data[0].q,
-                                        author: data[0].a
-                                    };
-                                    break;
-                                }
-                            } else { // Quotable
-                                if (data.content && data.author) {
-                                    quote = {
-                                        content: data.content,
-                                        author: data.author
-                                    };
-                                    break;
-                                }
+                            // L'API retourne un array avec le nouvel endpoint
+                            const quoteData = Array.isArray(data) ? data[0] : data;
+                            
+                            if (quoteData && quoteData.content && quoteData.author) {
+                                quote = {
+                                    content: quoteData.content,
+                                    author: quoteData.author
+                                };
+                                break;
                             }
                         }
-                    } catch (apiError) {
-                        console.log(`API ${i + 1} failed:`, apiError);
+                    } catch (error) {
+                        console.log(`Endpoint ${endpoint} failed:`, error);
                         continue;
                     }
                 }
                 
-                // Si on a trouvé une citation
+                // Si on a trouvé une citation via l'API
                 if (quote) {
                     setTimeout(() => {
                         quoteText.textContent = `"${quote.content}"`;
@@ -1025,18 +1085,19 @@
                         quoteText.style.opacity = '1';
                     }, 300);
                 } else {
-                    throw new Error('All APIs failed');
+                    throw new Error('API Quotable unavailable');
                 }
                 
             } catch (error) {
-                console.log('Toutes les APIs ont échoué, utilisation du fallback local');
+                console.log('API Quotable non disponible, utilisation du fallback local');
                 
                 // Fallback vers les citations locales
-                const quotes = quotesDatabase[currentLanguage];
+                const quotes = fallbackQuotes[currentLanguage];
+                const usedQuotes = usedFallbackQuotes[currentLanguage];
                 
                 // Réinitialiser si toutes les citations ont été utilisées
                 if (usedQuotes.length >= quotes.length) {
-                    usedQuotes = [];
+                    usedFallbackQuotes[currentLanguage] = [];
                 }
                 
                 // Trouver une citation non utilisée
@@ -1046,7 +1107,7 @@
                 
                 // Marquer la citation comme utilisée
                 const originalIndex = quotes.indexOf(selectedQuote);
-                usedQuotes.push(originalIndex);
+                usedFallbackQuotes[currentLanguage].push(originalIndex);
                 
                 // Affichage avec animation
                 setTimeout(() => {
@@ -1074,7 +1135,7 @@
             showNotification(translations[currentLanguage].contactMessage, 'info');
         }
 
-        // Système de notifications - IDENTIQUE À L'ORIGINAL
+        // Système de notifications
         function showNotification(message, type = 'info') {
             document.querySelectorAll('.notification').forEach(n => n.remove());
             
@@ -1092,7 +1153,7 @@
             }, 4000);
         }
 
-        // Effets interactifs améliorés
+        // Effets interactifs
         function setupInteractiveEffects() {
             const toolCards = document.querySelectorAll('.tool-card');
             
