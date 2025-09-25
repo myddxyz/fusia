@@ -37,6 +37,10 @@
             box-sizing: border-box;
         }
 
+        html {
+            scroll-behavior: smooth;
+        }
+
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
@@ -44,6 +48,7 @@
             overflow-x: hidden;
             position: relative;
             transition: all 0.3s ease;
+            will-change: scroll-position;
         }
 
         body::before {
@@ -304,49 +309,25 @@
             border-radius: 30px;
             padding: 3.5rem 3rem;
             text-align: center;
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
             cursor: pointer;
             position: relative;
             overflow: hidden;
             box-shadow: var(--shadow-light);
+            transform: translateZ(0); /* Force hardware acceleration */
+            will-change: transform;
         }
 
         .tool-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
-            transition: left 0.8s ease;
-            z-index: 1;
+            display: none; /* Désactiver complètement l'effet shimmer */
         }
 
         .tool-card::after {
-            content: '';
-            position: absolute;
-            top: -2px;
-            left: -2px;
-            right: -2px;
-            bottom: -2px;
-            background: linear-gradient(45deg, rgba(255,255,255,0.1), transparent, rgba(255,255,255,0.1));
-            border-radius: 32px;
-            z-index: -1;
-            opacity: 0;
-            transition: opacity 0.5s ease;
-        }
-
-        .tool-card:hover::before {
-            left: 100%;
-        }
-
-        .tool-card:hover::after {
-            opacity: 1;
+            display: none; /* Désactiver l'effet de bordure animée */
         }
 
         .tool-card:hover {
-            transform: translateY(-15px) scale(1.02);
+            transform: translateY(-8px);
             box-shadow: var(--shadow-heavy);
             background: rgba(255, 255, 255, 0.15);
             border-color: rgba(255, 255, 255, 0.3);
@@ -866,7 +847,7 @@
             }
         };
 
-        // Citations de fallback pour chaque langue
+        // Citations de fallback étendues pour chaque langue
         const fallbackQuotes = {
             en: [
                 { content: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
@@ -874,7 +855,16 @@
                 { content: "Success is going from failure to failure without losing your enthusiasm.", author: "Winston Churchill" },
                 { content: "The future belongs to those who believe in the beauty of their dreams.", author: "Eleanor Roosevelt" },
                 { content: "Technology is best when it brings people together.", author: "Matt Mullenweg" },
-                { content: "Creativity is intelligence having fun.", author: "Albert Einstein" }
+                { content: "Creativity is intelligence having fun.", author: "Albert Einstein" },
+                { content: "Be yourself; everyone else is already taken.", author: "Oscar Wilde" },
+                { content: "The best time to plant a tree was 20 years ago. The second best time is now.", author: "Chinese Proverb" },
+                { content: "It is during our darkest moments that we must focus to see the light.", author: "Aristotle" },
+                { content: "What does not kill me, makes me stronger.", author: "Friedrich Nietzsche" },
+                { content: "Life is what happens when you're busy making other plans.", author: "John Lennon" },
+                { content: "The way to get started is to quit talking and begin doing.", author: "Walt Disney" },
+                { content: "Don't let yesterday take up too much of today.", author: "Will Rogers" },
+                { content: "You learn more from failure than from success.", author: "Unknown" },
+                { content: "It's not whether you get knocked down, it's whether you get up.", author: "Vince Lombardi" }
             ],
             fr: [
                 { content: "La seule façon de faire du bon travail est d'aimer ce que vous faites.", author: "Steve Jobs" },
@@ -882,7 +872,16 @@
                 { content: "Le succès c'est d'aller d'échec en échec sans perdre son enthousiasme.", author: "Winston Churchill" },
                 { content: "L'avenir appartient à ceux qui croient en la beauté de leurs rêves.", author: "Eleanor Roosevelt" },
                 { content: "La technologie est meilleure quand elle rapproche les gens.", author: "Matt Mullenweg" },
-                { content: "La créativité, c'est l'intelligence qui s'amuse.", author: "Albert Einstein" }
+                { content: "La créativité, c'est l'intelligence qui s'amuse.", author: "Albert Einstein" },
+                { content: "Soyez vous-même ; tout le monde est déjà pris.", author: "Oscar Wilde" },
+                { content: "Le meilleur moment pour planter un arbre était il y a 20 ans. Le deuxième meilleur moment est maintenant.", author: "Proverbe chinois" },
+                { content: "C'est dans nos moments les plus sombres que nous devons nous concentrer pour voir la lumière.", author: "Aristote" },
+                { content: "Ce qui ne nous tue pas nous rend plus fort.", author: "Friedrich Nietzsche" },
+                { content: "La vie, c'est ce qui arrive quand vous êtes occupé à faire d'autres projets.", author: "John Lennon" },
+                { content: "La façon de commencer est d'arrêter de parler et de commencer à faire.", author: "Walt Disney" },
+                { content: "Ne laissez pas hier prendre trop de place aujourd'hui.", author: "Will Rogers" },
+                { content: "On apprend plus de l'échec que du succès.", author: "Inconnu" },
+                { content: "Ce n'est pas de savoir si vous tombez, c'est de savoir si vous vous relevez.", author: "Vince Lombardi" }
             ],
             es: [
                 { content: "La única manera de hacer un gran trabajo es amar lo que haces.", author: "Steve Jobs" },
@@ -890,7 +889,16 @@
                 { content: "El éxito es ir de fracaso en fracaso sin perder el entusiasmo.", author: "Winston Churchill" },
                 { content: "El futuro pertenece a quienes creen en la belleza de sus sueños.", author: "Eleanor Roosevelt" },
                 { content: "La tecnología es mejor cuando acerca a las personas.", author: "Matt Mullenweg" },
-                { content: "La creatividad es la inteligencia divirtiéndose.", author: "Albert Einstein" }
+                { content: "La creatividad es la inteligencia divirtiéndose.", author: "Albert Einstein" },
+                { content: "Sé tú mismo; todos los demás ya están ocupados.", author: "Oscar Wilde" },
+                { content: "El mejor momento para plantar un árbol fue hace 20 años. El segundo mejor momento es ahora.", author: "Proverbio chino" },
+                { content: "Es en nuestros momentos más oscuros cuando debemos enfocarnos para ver la luz.", author: "Aristóteles" },
+                { content: "Lo que no me mata, me hace más fuerte.", author: "Friedrich Nietzsche" },
+                { content: "La vida es lo que pasa mientras estás ocupado haciendo otros planes.", author: "John Lennon" },
+                { content: "La forma de empezar es dejar de hablar y empezar a hacer.", author: "Walt Disney" },
+                { content: "No dejes que el ayer ocupe demasiado del hoy.", author: "Will Rogers" },
+                { content: "Aprendes más del fracaso que del éxito.", author: "Desconocido" },
+                { content: "No es si te caes, es si te levantas.", author: "Vince Lombardi" }
             ]
         };
 
@@ -992,8 +1000,8 @@
             toggle.title = titleMap[currentLanguage];
         }
 
-        // Fonction améliorée pour les citations avec l'API Quotable
-        async function loadQuote() {
+        // Fonction simplifiée pour les citations - uniquement local
+        function loadQuote() {
             const quoteText = document.getElementById('quote-text');
             const quoteAuthor = document.getElementById('quote-author');
             
@@ -1002,83 +1010,30 @@
             quoteText.textContent = translations[currentLanguage].loading;
             quoteAuthor.textContent = '';
             
-            try {
-                // Essayer l'API Quotable avec différentes stratégies
-                let quote = null;
-                
-                // Configuration des tags selon la langue
-                const inspirationalTags = 'inspirational,motivational,wisdom,success,technology,science,life,happiness';
-                
-                // Essayer plusieurs endpoints de l'API Quotable
-                const endpoints = [
-                    `https://api.quotable.io/quotes/random?tags=${inspirationalTags}&minLength=30&maxLength=180`,
-                    `https://api.quotable.io/quotes/random?minLength=40&maxLength=150`,
-                    `https://api.quotable.io/quotes/random?tags=wisdom,success&maxLength=200`,
-                    'https://api.quotable.io/quotes/random'
-                ];
-                
-                for (let endpoint of endpoints) {
-                    try {
-                        const response = await fetch(endpoint);
-                        if (response.ok) {
-                            const data = await response.json();
-                            
-                            // L'API retourne un array avec le nouvel endpoint
-                            const quoteData = Array.isArray(data) ? data[0] : data;
-                            
-                            if (quoteData && quoteData.content && quoteData.author) {
-                                quote = {
-                                    content: quoteData.content,
-                                    author: quoteData.author
-                                };
-                                break;
-                            }
-                        }
-                    } catch (error) {
-                        console.log(`Endpoint ${endpoint} failed:`, error);
-                        continue;
-                    }
-                }
-                
-                // Si on a trouvé une citation via l'API
-                if (quote) {
-                    setTimeout(() => {
-                        quoteText.textContent = `"${quote.content}"`;
-                        quoteAuthor.textContent = `— ${quote.author}`;
-                        quoteText.style.opacity = '1';
-                    }, 300);
-                } else {
-                    throw new Error('API Quotable unavailable');
-                }
-                
-            } catch (error) {
-                console.log('API Quotable non disponible, utilisation du fallback local');
-                
-                // Fallback vers les citations locales
-                const quotes = fallbackQuotes[currentLanguage];
-                const usedQuotes = usedFallbackQuotes[currentLanguage];
-                
-                // Réinitialiser si toutes les citations ont été utilisées
-                if (usedQuotes.length >= quotes.length) {
-                    usedFallbackQuotes[currentLanguage] = [];
-                }
-                
-                // Trouver une citation non utilisée
-                let availableQuotes = quotes.filter((_, index) => !usedQuotes.includes(index));
-                const randomIndex = Math.floor(Math.random() * availableQuotes.length);
-                const selectedQuote = availableQuotes[randomIndex];
-                
-                // Marquer la citation comme utilisée
-                const originalIndex = quotes.indexOf(selectedQuote);
-                usedFallbackQuotes[currentLanguage].push(originalIndex);
-                
-                // Affichage avec animation
-                setTimeout(() => {
-                    quoteText.textContent = `"${selectedQuote.content}"`;
-                    quoteAuthor.textContent = `— ${selectedQuote.author}`;
-                    quoteText.style.opacity = '1';
-                }, 300);
+            // Utiliser directement les citations locales
+            const quotes = fallbackQuotes[currentLanguage];
+            const usedQuotes = usedFallbackQuotes[currentLanguage];
+            
+            // Réinitialiser si toutes les citations ont été utilisées
+            if (usedQuotes.length >= quotes.length) {
+                usedFallbackQuotes[currentLanguage] = [];
             }
+            
+            // Trouver une citation non utilisée
+            let availableQuotes = quotes.filter((_, index) => !usedFallbackQuotes[currentLanguage].includes(index));
+            const randomIndex = Math.floor(Math.random() * availableQuotes.length);
+            const selectedQuote = availableQuotes[randomIndex];
+            
+            // Marquer la citation comme utilisée
+            const originalIndex = quotes.indexOf(selectedQuote);
+            usedFallbackQuotes[currentLanguage].push(originalIndex);
+            
+            // Affichage avec animation
+            setTimeout(() => {
+                quoteText.textContent = `"${selectedQuote.content}"`;
+                quoteAuthor.textContent = `— ${selectedQuote.author}`;
+                quoteText.style.opacity = '1';
+            }, 300);
         }
 
         // Navigation functions - VOS LIENS ORIGINAUX CONSERVÉS
