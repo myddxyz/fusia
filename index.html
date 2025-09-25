@@ -56,13 +56,7 @@
             background: var(--bg-radial1), var(--bg-radial2), var(--bg-radial3);
             pointer-events: none;
             z-index: -1;
-            animation: backgroundShift 20s ease-in-out infinite alternate;
             transition: background 0.3s ease;
-        }
-
-        @keyframes backgroundShift {
-            0% { transform: translateX(0) translateY(0) scale(1); }
-            100% { transform: translateX(-20px) translateY(-20px) scale(1.05); }
         }
 
         /* Controls fixes en haut */
@@ -250,11 +244,9 @@
             text-shadow: 0 4px 20px rgba(0,0,0,0.3);
             margin-bottom: 1.5rem;
             background: linear-gradient(45deg, #fff, #f0f8ff, #e6f3ff);
-            background-size: 400% 400%;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            animation: gradient-shift 3s ease-in-out infinite;
             position: relative;
             display: inline-block;
         }
@@ -269,17 +261,6 @@
             height: 3px;
             background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
             border-radius: 2px;
-            animation: logoGlow 2s ease-in-out infinite alternate;
-        }
-
-        @keyframes gradient-shift {
-            0%, 100% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-        }
-
-        @keyframes logoGlow {
-            0% { box-shadow: 0 0 5px rgba(255,255,255,0.5); }
-            100% { box-shadow: 0 0 20px rgba(255,255,255,0.8); }
         }
 
         .tagline {
@@ -452,24 +433,12 @@
             background: linear-gradient(45deg, #2ecc71, #27ae60);
             color: white;
             box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3);
-            animation: pulse-green 2s ease-in-out infinite;
         }
 
         .status-development {
             background: linear-gradient(45deg, #f39c12, #e67e22);
             color: white;
             box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);
-            animation: pulse-orange 2s ease-in-out infinite;
-        }
-
-        @keyframes pulse-green {
-            0%, 100% { box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3); }
-            50% { box-shadow: 0 4px 25px rgba(46, 204, 113, 0.6); }
-        }
-
-        @keyframes pulse-orange {
-            0%, 100% { box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3); }
-            50% { box-shadow: 0 4px 25px rgba(243, 156, 18, 0.6); }
         }
 
         .tool-features {
@@ -507,12 +476,6 @@
             left: 0;
             color: #2ecc71;
             font-size: 1.2rem;
-            animation: sparkle 2s ease-in-out infinite;
-        }
-
-        @keyframes sparkle {
-            0%, 100% { transform: scale(1) rotate(0deg); opacity: 1; }
-            50% { transform: scale(1.2) rotate(180deg); opacity: 0.8; }
         }
 
         .tool-button {
