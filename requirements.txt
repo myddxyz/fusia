@@ -1,3 +1,6 @@
 sympy==1.12
 mistralai==1.0.0
-Werkzeug>=2.0.0
+wikipedia
+requests
+flask
+werkzeug
