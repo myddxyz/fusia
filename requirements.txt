@@ -1,6 +1,7 @@
 sympy==1.12
 mistralai==1.0.0
-wikipedia
-requests
-flask
 werkzeug
+flask==2.3.3
+wikipedia==1.4.0
+requests==2.31.0
+gunicorn==21.2.0
