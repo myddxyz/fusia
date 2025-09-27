@@ -1,6 +1,7 @@
 from flask import Flask, send_from_directory, redirect, request, jsonify
 import os
 import sys
+import importlib.util
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Créer l'app Flask principale
@@ -19,14 +20,18 @@ except ImportError as e:
     summarizer_app = None
     summarizer = None
 
-# Ajouter le dossier mathia au path pour pouvoir importer l'app
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mathia'))
-
-# Importer l'app de Mathia
+# Importer l'app de Mathia avec importlib pour éviter les conflits
 try:
-    from app import app as mathia_app, mathia
+    mathia_path = os.path.join(os.path.dirname(__file__), 'mathia', 'app.py')
+    spec = importlib.util.spec_from_file_location("mathia_module", mathia_path)
+    mathia_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mathia_module)
+    
+    mathia_app = mathia_module.app
+    mathia = mathia_module.mathia
+    
     print("✅ App Mathia importée avec succès")
-except ImportError as e:
+except Exception as e:
     print(f"❌ Erreur import Mathia: {e}")
     mathia_app = None
     mathia = None
