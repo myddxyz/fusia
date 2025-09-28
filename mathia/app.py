@@ -1552,47 +1552,92 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             
             setupEventListeners() {
                 // Mode switching
-                document.querySelectorAll('.mode-btn').forEach(btn => {
+                document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
                     btn.addEventListener('click', (e) => {
-                        if (e.target.dataset.mode) {
-                            this.switchMode(e.target.dataset.mode);
-                        }
+                        e.preventDefault();
+                        console.log('Mode button clicked:', e.target.dataset.mode);
+                        this.switchMode(e.target.dataset.mode);
                     });
                 });
                 
                 // Chat functionality
-                document.getElementById('sendBtn').addEventListener('click', () => this.sendMessage());
-                document.getElementById('messageInput').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
+                const sendBtn = document.getElementById('sendBtn');
+                if (sendBtn) {
+                    sendBtn.addEventListener('click', (e) => {
                         e.preventDefault();
+                        console.log('Send button clicked');
                         this.sendMessage();
-                    }
-                });
+                    });
+                }
+                
+                const messageInput = document.getElementById('messageInput');
+                if (messageInput) {
+                    messageInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            this.sendMessage();
+                        }
+                    });
+                }
                 
                 // Example cards
                 document.querySelectorAll('.example-card').forEach(card => {
-                    card.addEventListener('click', () => {
+                    card.addEventListener('click', (e) => {
+                        e.preventDefault();
                         const example = card.dataset.example;
-                        document.getElementById('messageInput').value = example;
-                        this.sendMessage();
+                        console.log('Example clicked:', example);
+                        const input = document.getElementById('messageInput');
+                        if (input) {
+                            input.value = example;
+                            this.sendMessage();
+                        }
                     });
                 });
                 
                 // Practice functionality
-                document.getElementById('newProblemBtn').addEventListener('click', () => this.loadNewProblem());
-                document.getElementById('submitBtn').addEventListener('click', () => this.submitAnswer());
-                document.getElementById('hintBtn').addEventListener('click', () => this.showHint());
+                const newProblemBtn = document.getElementById('newProblemBtn');
+                if (newProblemBtn) {
+                    newProblemBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        console.log('New problem button clicked');
+                        this.loadNewProblem();
+                    });
+                }
                 
-                document.getElementById('answerInput').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
+                const submitBtn = document.getElementById('submitBtn');
+                if (submitBtn) {
+                    submitBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        console.log('Submit button clicked');
                         this.submitAnswer();
-                    }
-                });
+                    });
+                }
+                
+                const hintBtn = document.getElementById('hintBtn');
+                if (hintBtn) {
+                    hintBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        console.log('Hint button clicked');
+                        this.showHint();
+                    });
+                }
+                
+                const answerInput = document.getElementById('answerInput');
+                if (answerInput) {
+                    answerInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            this.submitAnswer();
+                        }
+                    });
+                }
             }
             
             switchMode(mode) {
+                console.log('Switching to mode:', mode);
+                
                 // Update buttons
-                document.querySelectorAll('.mode-btn').forEach(btn => {
+                document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
                     btn.classList.remove('active');
                     if (btn.dataset.mode === mode) {
                         btn.classList.add('active');
@@ -1600,30 +1645,53 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 });
                 
                 // Update sections
-                document.getElementById('chatSection').style.display = mode === 'chat' ? 'flex' : 'none';
-                document.getElementById('practiceSection').classList.toggle('active', mode === 'practice');
+                const chatSection = document.getElementById('chatSection');
+                const practiceSection = document.getElementById('practiceSection');
+                
+                if (chatSection && practiceSection) {
+                    if (mode === 'chat') {
+                        chatSection.style.display = 'flex';
+                        practiceSection.classList.remove('active');
+                    } else if (mode === 'practice') {
+                        chatSection.style.display = 'none';
+                        practiceSection.classList.add('active');
+                    }
+                }
                 
                 this.currentMode = mode;
                 
                 if (mode === 'practice' && !this.currentProblem) {
                     this.loadNewProblem();
                 }
+                
+                console.log('Mode switched to:', this.currentMode);
             }
             
             async sendMessage() {
                 const input = document.getElementById('messageInput');
-                const message = input.value.trim();
+                if (!input) {
+                    console.error('Message input not found');
+                    return;
+                }
                 
-                if (!message) return;
+                const message = input.value.trim();
+                console.log('Sending message:', message);
+                
+                if (!message) {
+                    this.showNotification('Veuillez entrer un message', 'warning');
+                    return;
+                }
                 
                 // Add user message
                 this.addMessage('user', message);
                 input.value = '';
+                input.style.height = 'auto';
                 
                 // Show loading
                 const loadingId = this.addMessage('assistant', '<span class="loading"></span> Analyse en cours...');
                 
                 try {
+                    console.log('Making API call...');
                     const response = await fetch('/api/chat', {
                         method: 'POST',
                         headers: {
@@ -1635,14 +1703,19 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                         })
                     });
                     
+                    console.log('Response received:', response.status);
                     const data = await response.json();
+                    console.log('Response data:', data);
                     
                     // Remove loading message
-                    document.getElementById(loadingId).remove();
+                    const loadingElement = document.getElementById(loadingId);
+                    if (loadingElement) {
+                        loadingElement.remove();
+                    }
                     
                     if (data.success) {
                         // Add AI response
-                        let responseContent = data.response;
+                        let responseContent = data.response || 'Réponse vide reçue';
                         
                         // Add solution steps if available
                         if (data.solution_steps && data.solution_steps.length > 0) {
@@ -1668,13 +1741,18 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                         this.updateProfile(data);
                         
                     } else {
-                        this.addMessage('assistant', `Erreur: ${data.error}`);
+                        this.addMessage('assistant', `Erreur: ${data.error || 'Erreur inconnue'}`);
+                        this.showNotification('Erreur lors du traitement', 'error');
                     }
                     
                 } catch (error) {
-                    document.getElementById(loadingId).remove();
-                    this.addMessage('assistant', 'Désolé, une erreur de connexion s\'est produite. Veuillez réessayer.');
                     console.error('Chat error:', error);
+                    const loadingElement = document.getElementById(loadingId);
+                    if (loadingElement) {
+                        loadingElement.remove();
+                    }
+                    this.addMessage('assistant', 'Désolé, une erreur de connexion s\'est produite. Veuillez réessayer.');
+                    this.showNotification('Erreur de connexion', 'error');
                 }
             }
             
@@ -1923,7 +2001,48 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         
         // Initialize Mathia when page loads
         document.addEventListener('DOMContentLoaded', () => {
-            window.mathia = new Mathia();
+            console.log('DOM Content Loaded - Initializing Mathia');
+            
+            // Wait a bit for all elements to be ready
+            setTimeout(() => {
+                try {
+                    window.mathia = new Mathia();
+                    console.log('Mathia initialized successfully');
+                } catch (error) {
+                    console.error('Failed to initialize Mathia:', error);
+                    
+                    // Fallback: basic button functionality
+                    const sendBtn = document.getElementById('sendBtn');
+                    if (sendBtn) {
+                        sendBtn.addEventListener('click', () => {
+                            console.log('Fallback send button clicked');
+                            alert('Mathia est en cours de chargement...');
+                        });
+                    }
+                    
+                    // Add basic mode switching
+                    document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            console.log('Fallback mode button clicked:', e.target.dataset.mode);
+                            
+                            // Basic mode switching
+                            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                            e.target.classList.add('active');
+                            
+                            const chatSection = document.getElementById('chatSection');
+                            const practiceSection = document.getElementById('practiceSection');
+                            
+                            if (e.target.dataset.mode === 'chat') {
+                                chatSection.style.display = 'flex';
+                                practiceSection.classList.remove('active');
+                            } else {
+                                chatSection.style.display = 'none';
+                                practiceSection.classList.add('active');
+                            }
+                        });
+                    });
+                }
+            }, 100);
         });
         
         // Auto-resize textarea
