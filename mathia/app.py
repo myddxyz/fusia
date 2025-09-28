@@ -13,59 +13,54 @@ from sympy import *
 from sympy.plotting import plot, plot3d
 from mistralai import Mistral
 import time
-import asyncio
+import re
+import random
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
 app = Flask(__name__)
 
-class MathiaCore:
-    """Cœur optimisé de Mathia - Assistant Mathématique IA"""
+class MathiaVisualCore:
+    """Mathia - Assistant Mathématique Visuel avec IA Centrale"""
     
     def __init__(self):
-        # Configuration des clés API Mistral avec rotation intelligente
+        # Configuration des clés API Mistral
         self.api_keys = [
             os.environ.get('MISTRAL_KEY_1', 'FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX'),
             os.environ.get('MISTRAL_KEY_2', '9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF'),
             os.environ.get('MISTRAL_KEY_3', 'cvkQHVcomFFEW47G044x2p4DTyk5BIc7')
         ]
         self.current_key_index = 0
-        self.key_errors = {i: 0 for i in range(len(self.api_keys))}  # Tracking d'erreurs
+        self.key_errors = {i: 0 for i in range(len(self.api_keys))}
         
-        # Variables symboliques étendues
+        # Variables symboliques
         self.x, self.y, self.z, self.t = symbols('x y z t')
-        self.n, self.k, self.a, self.b, self.c = symbols('n k a b c', integer=False)
-        self.alpha, self.beta, self.gamma = symbols('alpha beta gamma')
+        self.n, self.k, self.a, self.b, self.c = symbols('n k a b c')
         
-        # Cache pour optimiser les performances
-        self.calculation_cache = {}
-        self.graph_cache = {}
-        
-        # Statistiques étendues
+        # Cache et statistiques
+        self.conversation_history = []
+        self.visual_cache = {}
         self.stats = {
-            'calculations': 0,
-            'graphs_generated': 0,
-            'chat_messages': 0,
-            'cache_hits': 0,
-            'average_response_time': 0
+            'messages': 0,
+            'visualizations': 0,
+            'functions_analyzed': 0,
+            'concepts_explained': 0
         }
         
-        # Configuration matplotlib optimisée
+        # Configuration matplotlib moderne
         plt.style.use('dark_background')
         plt.rcParams.update({
-            'font.size': 12,
+            'font.size': 11,
             'axes.linewidth': 1.5,
-            'lines.linewidth': 2.5,
-            'figure.facecolor': '#1a1a1a',
-            'axes.facecolor': '#2a2a2a'
+            'lines.linewidth': 2.8,
+            'figure.facecolor': '#0f0f23',
+            'axes.facecolor': '#1a1a3a'
         })
         
-        # Pool de threads pour les calculs parallèles
-        self.executor = ThreadPoolExecutor(max_workers=3)
+        self.executor = ThreadPoolExecutor(max_workers=2)
         
-    def get_best_mistral_client(self):
-        """Obtient le meilleur client Mistral disponible basé sur les erreurs passées"""
-        # Trier les clés par nombre d'erreurs (moins d'erreurs = meilleure priorité)
+    def get_mistral_client(self):
+        """Obtient le meilleur client Mistral disponible"""
         sorted_keys = sorted(range(len(self.api_keys)), key=lambda i: self.key_errors[i])
         
         for key_index in sorted_keys:
@@ -78,513 +73,442 @@ class MathiaCore:
                 self.key_errors[key_index] += 1
                 continue
         
-        # Fallback sur la première clé si toutes échouent
         return Mistral(api_key=self.api_keys[0])
     
-    def create_cache_key(self, expression, operation):
-        """Crée une clé de cache unique pour une expression et opération"""
-        return f"{operation}:{hash(str(expression))}"
+    def analyze_message_for_visuals(self, message):
+        """Analyse le message pour détecter les besoins de visualisation"""
+        visual_triggers = {
+            'function': ['fonction', 'f(x)', 'graphique', 'courbe', 'tracer', 'plot'],
+            'equation': ['équation', 'résoudre', '=', 'solutions'],
+            'statistics': ['données', 'statistique', 'moyenne', 'écart', 'distribution'],
+            'geometry': ['triangle', 'cercle', 'géométrie', 'aire', 'périmètre'],
+            'analysis': ['dérivée', 'intégrale', 'limite', 'asymptote'],
+            'comparison': ['comparer', 'versus', 'différence', 'évolution']
+        }
+        
+        message_lower = message.lower()
+        detected_types = []
+        
+        for viz_type, keywords in visual_triggers.items():
+            if any(keyword in message_lower for keyword in keywords):
+                detected_types.append(viz_type)
+        
+        # Détection d'expressions mathématiques
+        math_patterns = [
+            r'[a-z]\([x-z]\)',  # f(x), g(y), etc.
+            r'x\^?\d+',         # x^2, x2, etc.
+            r'sin|cos|tan|log|exp|sqrt',  # fonctions
+            r'\d+[\+\-\*/]\d+',  # opérations
+        ]
+        
+        for pattern in math_patterns:
+            if re.search(pattern, message_lower):
+                if 'function' not in detected_types:
+                    detected_types.append('function')
+                break
+        
+        return detected_types
     
-    def parse_expression_advanced(self, expr_str):
-        """Parser avancé avec gestion de syntaxes multiples"""
+    def extract_math_expressions(self, text):
+        """Extrait les expressions mathématiques du texte"""
+        expressions = []
+        
+        # Patterns pour différents types d'expressions
+        patterns = [
+            r'([a-z]\([x-z]\)\s*=\s*[^,\.]+)',  # f(x) = ...
+            r'(x\^?\d+[\+\-\*/][^,\.]+)',       # x^2 + 3x + 2
+            r'(sin\([^)]+\)|cos\([^)]+\)|tan\([^)]+\))',  # fonctions trig
+            r'(e\^[^,\s]+|exp\([^)]+\))',       # exponentielles
+            r'(log\([^)]+\)|ln\([^)]+\))',      # logarithmes
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, text.lower())
+            expressions.extend(matches)
+        
+        return list(set(expressions))  # Supprimer les doublons
+    
+    def create_concept_visualization(self, concept, data=None):
+        """Crée une visualisation pour illustrer un concept mathématique"""
         try:
-            expr_str = expr_str.strip()
+            fig, ax = plt.subplots(figsize=(12, 8), facecolor='#0f0f23')
+            ax.set_facecolor('#1a1a3a')
             
-            # Remplacements étendus et intelligents
-            replacements = [
-                # Puissances et fonctions courantes
-                (r'\^', '**'),
-                (r'ln\s*\(', 'log('),
-                (r'lg\s*\(', 'log('),
-                (r'log10\s*\(', 'log('),
-                # Trigonométrie
-                (r'arcsin\s*\(', 'asin('),
-                (r'arccos\s*\(', 'acos('),
-                (r'arctan\s*\(', 'atan('),
-                (r'tg\s*\(', 'tan('),
-                (r'ctg\s*\(', 'cot('),
-                # Hyperboliques
-                (r'sh\s*\(', 'sinh('),
-                (r'ch\s*\(', 'cosh('),
-                (r'th\s*\(', 'tanh('),
-                # Constantes
-                (r'\be\b', 'E'),
-                (r'pi\b', 'pi'),
-                (r'π', 'pi'),
-                # Opérateurs
-                (r'×', '*'),
-                (r'÷', '/'),
-                (r'√', 'sqrt'),
+            if concept == 'function':
+                return self._visualize_function_concept(ax, data)
+            elif concept == 'statistics':
+                return self._visualize_statistics_concept(ax, data)
+            elif concept == 'geometry':
+                return self._visualize_geometry_concept(ax, data)
+            elif concept == 'analysis':
+                return self._visualize_analysis_concept(ax, data)
+            elif concept == 'comparison':
+                return self._visualize_comparison_concept(ax, data)
+            else:
+                return self._visualize_generic_concept(ax, concept, data)
+                
+        except Exception as e:
+            print(f"Erreur visualisation concept {concept}: {e}")
+            return None
+    
+    def _visualize_function_concept(self, ax, data):
+        """Visualise des fonctions mathématiques"""
+        x_vals = np.linspace(-10, 10, 1000)
+        
+        # Fonctions de démonstration si aucune donnée spécifique
+        if not data:
+            functions = [
+                (lambda x: np.sin(x), 'sin(x)', '#00d4ff'),
+                (lambda x: np.cos(x), 'cos(x)', '#ff6b6b'),
+                (lambda x: x**2 / 20, 'x²/20', '#4ecdc4'),
+            ]
+        else:
+            functions = data
+        
+        for func, label, color in functions:
+            try:
+                y_vals = func(x_vals)
+                mask = np.isfinite(y_vals)
+                ax.plot(x_vals[mask], y_vals[mask], color=color, linewidth=3, 
+                       label=label, alpha=0.9)
+            except:
+                continue
+        
+        ax.grid(True, alpha=0.3, color='white', linestyle='-', linewidth=0.5)
+        ax.axhline(y=0, color='#ffffff', linewidth=1.5, alpha=0.8)
+        ax.axvline(x=0, color='#ffffff', linewidth=1.5, alpha=0.8)
+        
+        ax.set_xlabel('x', fontsize=14, color='white', fontweight='bold')
+        ax.set_ylabel('f(x)', fontsize=14, color='white', fontweight='bold')
+        ax.set_title('Visualisation de Fonctions', fontsize=16, 
+                    color='#00d4ff', fontweight='bold', pad=20)
+        
+        legend = ax.legend(loc='upper right', frameon=True, fancybox=True)
+        legend.get_frame().set_facecolor('#2a2a4a')
+        legend.get_frame().set_edgecolor('#00d4ff')
+        
+        ax.tick_params(colors='white', labelsize=12)
+        for spine in ax.spines.values():
+            spine.set_color('#555577')
+            spine.set_linewidth(1.5)
+        
+        return self._save_plot_to_base64()
+    
+    def _visualize_statistics_concept(self, ax, data):
+        """Visualise des concepts statistiques"""
+        if not data:
+            # Données de démonstration
+            np.random.seed(42)
+            data1 = np.random.normal(100, 15, 1000)
+            data2 = np.random.normal(110, 20, 1000)
+            
+            ax.hist(data1, bins=30, alpha=0.7, color='#00d4ff', label='Série A', density=True)
+            ax.hist(data2, bins=30, alpha=0.7, color='#ff6b6b', label='Série B', density=True)
+        
+        ax.set_xlabel('Valeurs', fontsize=14, color='white', fontweight='bold')
+        ax.set_ylabel('Densité', fontsize=14, color='white', fontweight='bold')
+        ax.set_title('Distribution Statistique', fontsize=16, 
+                    color='#00d4ff', fontweight='bold', pad=20)
+        
+        ax.grid(True, alpha=0.3, color='white', linestyle='-', linewidth=0.5)
+        legend = ax.legend(frameon=True, fancybox=True)
+        legend.get_frame().set_facecolor('#2a2a4a')
+        
+        ax.tick_params(colors='white', labelsize=12)
+        for spine in ax.spines.values():
+            spine.set_color('#555577')
+        
+        return self._save_plot_to_base64()
+    
+    def _visualize_geometry_concept(self, ax, data):
+        """Visualise des concepts géométriques"""
+        # Cercle et triangle de démonstration
+        theta = np.linspace(0, 2*np.pi, 100)
+        
+        # Cercle
+        circle_x = np.cos(theta)
+        circle_y = np.sin(theta)
+        ax.plot(circle_x, circle_y, color='#00d4ff', linewidth=3, label='Cercle unitaire')
+        
+        # Triangle inscrit
+        triangle_angles = [0, 2*np.pi/3, 4*np.pi/3, 0]
+        triangle_x = [np.cos(angle) for angle in triangle_angles]
+        triangle_y = [np.sin(angle) for angle in triangle_angles]
+        ax.plot(triangle_x, triangle_y, color='#ff6b6b', linewidth=3, label='Triangle équilatéral')
+        
+        # Axes et centre
+        ax.axhline(y=0, color='#ffffff', linewidth=1, alpha=0.6)
+        ax.axvline(x=0, color='#ffffff', linewidth=1, alpha=0.6)
+        ax.plot(0, 0, 'o', color='#4ecdc4', markersize=8, label='Centre')
+        
+        ax.set_xlim(-1.5, 1.5)
+        ax.set_ylim(-1.5, 1.5)
+        ax.set_aspect('equal')
+        
+        ax.set_xlabel('x', fontsize=14, color='white', fontweight='bold')
+        ax.set_ylabel('y', fontsize=14, color='white', fontweight='bold')
+        ax.set_title('Géométrie - Cercle et Triangle', fontsize=16, 
+                    color='#00d4ff', fontweight='bold', pad=20)
+        
+        ax.grid(True, alpha=0.3, color='white', linestyle='-', linewidth=0.5)
+        legend = ax.legend(frameon=True, fancybox=True)
+        legend.get_frame().set_facecolor('#2a2a4a')
+        
+        ax.tick_params(colors='white', labelsize=12)
+        for spine in ax.spines.values():
+            spine.set_color('#555577')
+        
+        return self._save_plot_to_base64()
+    
+    def _visualize_analysis_concept(self, ax, data):
+        """Visualise des concepts d'analyse (dérivées, intégrales)"""
+        x_vals = np.linspace(-3, 3, 1000)
+        
+        # Fonction principale
+        f = lambda x: x**3 - 2*x**2 + x
+        f_prime = lambda x: 3*x**2 - 4*x + 1
+        
+        y_vals = f(x_vals)
+        y_prime_vals = f_prime(x_vals)
+        
+        ax.plot(x_vals, y_vals, color='#00d4ff', linewidth=3, label='f(x) = x³ - 2x² + x')
+        ax.plot(x_vals, y_prime_vals, color='#ff6b6b', linewidth=3, label="f'(x) = 3x² - 4x + 1")
+        
+        # Points critiques
+        critical_points = [1/3, 1]
+        for cp in critical_points:
+            ax.plot(cp, f(cp), 'o', color='#4ecdc4', markersize=10, markeredgewidth=2)
+        
+        ax.grid(True, alpha=0.3, color='white', linestyle='-', linewidth=0.5)
+        ax.axhline(y=0, color='#ffffff', linewidth=1, alpha=0.8)
+        ax.axvline(x=0, color='#ffffff', linewidth=1, alpha=0.8)
+        
+        ax.set_xlabel('x', fontsize=14, color='white', fontweight='bold')
+        ax.set_ylabel('y', fontsize=14, color='white', fontweight='bold')
+        ax.set_title('Analyse - Fonction et sa Dérivée', fontsize=16, 
+                    color='#00d4ff', fontweight='bold', pad=20)
+        
+        legend = ax.legend(frameon=True, fancybox=True)
+        legend.get_frame().set_facecolor('#2a2a4a')
+        
+        ax.tick_params(colors='white', labelsize=12)
+        for spine in ax.spines.values():
+            spine.set_color('#555577')
+        
+        return self._save_plot_to_base64()
+    
+    def _visualize_comparison_concept(self, ax, data):
+        """Visualise des comparaisons entre fonctions ou données"""
+        x_vals = np.linspace(0, 10, 1000)
+        
+        # Comparaison de croissances
+        linear = x_vals
+        quadratic = x_vals**2 / 10
+        exponential = np.exp(x_vals/3) / 10
+        
+        ax.plot(x_vals, linear, color='#00d4ff', linewidth=3, label='Linéaire: f(x) = x')
+        ax.plot(x_vals, quadratic, color='#ff6b6b', linewidth=3, label='Quadratique: f(x) = x²/10')
+        ax.plot(x_vals, exponential, color='#4ecdc4', linewidth=3, label='Exponentielle: f(x) = e^(x/3)/10')
+        
+        ax.set_xlabel('x', fontsize=14, color='white', fontweight='bold')
+        ax.set_ylabel('f(x)', fontsize=14, color='white', fontweight='bold')
+        ax.set_title('Comparaison de Croissances', fontsize=16, 
+                    color='#00d4ff', fontweight='bold', pad=20)
+        
+        ax.grid(True, alpha=0.3, color='white', linestyle='-', linewidth=0.5)
+        legend = ax.legend(frameon=True, fancybox=True)
+        legend.get_frame().set_facecolor('#2a2a4a')
+        
+        ax.tick_params(colors='white', labelsize=12)
+        for spine in ax.spines.values():
+            spine.set_color('#555577')
+        
+        return self._save_plot_to_base64()
+    
+    def _visualize_generic_concept(self, ax, concept, data):
+        """Visualisation générique pour autres concepts"""
+        # Graphique abstrait basé sur le concept
+        x_vals = np.linspace(0, 4*np.pi, 1000)
+        
+        # Différentes ondes selon le concept
+        wave1 = np.sin(x_vals) * np.exp(-x_vals/10)
+        wave2 = np.cos(x_vals * 1.5) * np.exp(-x_vals/15)
+        
+        ax.plot(x_vals, wave1, color='#00d4ff', linewidth=3, alpha=0.8)
+        ax.plot(x_vals, wave2, color='#ff6b6b', linewidth=3, alpha=0.8)
+        
+        ax.fill_between(x_vals, wave1, alpha=0.3, color='#00d4ff')
+        ax.fill_between(x_vals, wave2, alpha=0.3, color='#ff6b6b')
+        
+        ax.set_xlabel('x', fontsize=14, color='white', fontweight='bold')
+        ax.set_ylabel('f(x)', fontsize=14, color='white', fontweight='bold')
+        ax.set_title(f'Illustration - {concept.title()}', fontsize=16, 
+                    color='#00d4ff', fontweight='bold', pad=20)
+        
+        ax.grid(True, alpha=0.3, color='white', linestyle='-', linewidth=0.5)
+        ax.tick_params(colors='white', labelsize=12)
+        for spine in ax.spines.values():
+            spine.set_color('#555577')
+        
+        return self._save_plot_to_base64()
+    
+    def _save_plot_to_base64(self):
+        """Sauvegarde le plot actuel en base64"""
+        plt.tight_layout()
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#0f0f23', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        plt.close()
+        return image_base64
+    
+    def chat_with_visual_response(self, message):
+        """Chat principal avec génération de visuels intelligents"""
+        try:
+            client = self.get_mistral_client()
+            
+            # Analyser le message pour détecter les besoins visuels
+            visual_needs = self.analyze_message_for_visuals(message)
+            math_expressions = self.extract_math_expressions(message)
+            
+            # Prompt système enrichi
+            system_prompt = f"""Tu es Mathia, un assistant mathématique expert qui combine explications textuelles et visualisations.
+
+IMPORTANT - Réponse structurée requise:
+Réponds TOUJOURS avec cette structure JSON:
+{{
+    "text_response": "Ton explication claire et pédagogique ici",
+    "visual_needed": {len(visual_needs) > 0 or len(math_expressions) > 0},
+    "visual_type": "{visual_needs[0] if visual_needs else 'function'}",
+    "math_expressions": {math_expressions},
+    "key_concepts": ["concept1", "concept2"]
+}}
+
+Détecté dans le message:
+- Besoins visuels: {visual_needs}
+- Expressions mathématiques: {math_expressions}
+
+Ton rôle:
+1. Explique clairement les concepts mathématiques
+2. Utilise un langage accessible mais précis  
+3. Structure tes explications étape par étape
+4. Suggère des visualisations pertinentes
+5. Relie les concepts abstraits à des exemples concrets
+
+Évite les formatages avec des astérisques. Utilise un langage naturel et fluide."""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message}
             ]
             
-            import re
-            for pattern, replacement in replacements:
-                expr_str = re.sub(pattern, replacement, expr_str)
-            
-            # Gestion des multiplications implicites (2x -> 2*x)
-            expr_str = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', expr_str)
-            expr_str = re.sub(r'([a-zA-Z])(\d)', r'\1*\2', expr_str)
-            expr_str = re.sub(r'(\))(\()', r')*\2', expr_str)
-            
-            expr = sympify(expr_str, evaluate=False)
-            return expr, None
-            
-        except Exception as e:
-            return None, str(e)
-    
-    def solve_expression_optimized(self, expr_str, operation='solve'):
-        """Résolution optimisée avec cache et calcul parallèle"""
-        start_time = time.time()
-        
-        # Vérifier le cache
-        cache_key = self.create_cache_key(expr_str, operation)
-        if cache_key in self.calculation_cache:
-            self.stats['cache_hits'] += 1
-            return self.calculation_cache[cache_key]
-        
-        try:
-            expr, error = self.parse_expression_advanced(expr_str)
-            if error:
-                return {'success': False, 'error': f'Erreur de syntaxe: {error}'}
-            
-            result_data = {
-                'success': True,
-                'original': expr_str,
-                'parsed': str(expr),
-                'latex': latex(expr),
-                'results': {},
-                'metadata': {
-                    'variables': [str(var) for var in expr.free_symbols],
-                    'complexity': len(str(expr)),
-                    'operation': operation
-                }
-            }
-            
-            # Calculs selon l'opération avec optimisations
-            if operation == 'solve' or '=' in expr_str:
-                if '=' in expr_str:
-                    left, right = expr_str.split('=', 1)
-                    equation = Eq(sympify(left.strip()), sympify(right.strip()))
-                    solutions = solve(equation, self.x)
-                else:
-                    solutions = solve(expr, self.x)
-                
-                # Formatage intelligent des solutions
-                formatted_solutions = []
-                for sol in solutions:
-                    if sol.is_real:
-                        if sol.is_rational:
-                            formatted_solutions.append(f"{sol} ≈ {float(sol):.6g}")
-                        else:
-                            formatted_solutions.append(str(sol))
-                    else:
-                        formatted_solutions.append(f"{sol} (complexe)")
-                
-                result_data['results']['solutions'] = formatted_solutions
-                result_data['results']['solution_count'] = len(solutions)
-                
-            elif operation == 'analyze':
-                # Analyse complète de la fonction
-                result_data['results'].update(self._analyze_function_complete(expr))
-                
-            elif operation in ['expand', 'factor', 'simplify', 'derivative', 'integral']:
-                result_data['results'].update(self._perform_operation(expr, operation))
-            
-            # Génération de graphique en parallèle
-            try:
-                graph_future = self.executor.submit(self.generate_graph_optimized, expr)
-                graph_data = graph_future.result(timeout=5)  # Timeout de 5 secondes
-                if graph_data:
-                    result_data['graph'] = graph_data
-                    self.stats['graphs_generated'] += 1
-            except Exception as e:
-                print(f"Erreur génération graphique: {e}")
-            
-            # Mise à jour des stats
-            end_time = time.time()
-            response_time = end_time - start_time
-            self.stats['calculations'] += 1
-            self.stats['average_response_time'] = (
-                (self.stats['average_response_time'] * (self.stats['calculations'] - 1) + response_time) 
-                / self.stats['calculations']
-            )
-            
-            # Mise en cache
-            self.calculation_cache[cache_key] = result_data
-            
-            return result_data
-            
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-    
-    def _analyze_function_complete(self, expr):
-        """Analyse complète d'une fonction mathématique"""
-        results = {}
-        
-        try:
-            # Domaine et image
-            variables = list(expr.free_symbols)
-            if len(variables) == 1:
-                var = variables[0]
-                
-                # Dérivées
-                first_deriv = diff(expr, var)
-                second_deriv = diff(first_deriv, var)
-                results['first_derivative'] = str(first_deriv)
-                results['second_derivative'] = str(second_deriv)
-                
-                # Points critiques
-                critical_points = solve(first_deriv, var)
-                results['critical_points'] = [str(cp) for cp in critical_points[:5]]  # Limite à 5
-                
-                # Points d'inflexion
-                inflection_points = solve(second_deriv, var)
-                results['inflection_points'] = [str(ip) for ip in inflection_points[:5]]
-                
-                # Limites importantes
-                try:
-                    limit_inf = limit(expr, var, oo)
-                    limit_neg_inf = limit(expr, var, -oo)
-                    results['limit_infinity'] = str(limit_inf)
-                    results['limit_negative_infinity'] = str(limit_neg_inf)
-                except:
-                    pass
-                
-                # Asymptotes
-                try:
-                    # Asymptotes verticales (zéros du dénominateur)
-                    if expr.is_rational_function():
-                        denom = fraction(expr)[1]
-                        vertical_asymptotes = solve(denom, var)
-                        results['vertical_asymptotes'] = [str(va) for va in vertical_asymptotes[:3]]
-                except:
-                    pass
-                
-        except Exception as e:
-            results['analysis_error'] = str(e)
-        
-        return results
-    
-    def _perform_operation(self, expr, operation):
-        """Effectue une opération mathématique spécifique"""
-        results = {}
-        
-        try:
-            if operation == 'expand':
-                expanded = expand(expr)
-                results['expanded'] = str(expanded)
-                results['latex_expanded'] = latex(expanded)
-                
-            elif operation == 'factor':
-                factored = factor(expr)
-                results['factored'] = str(factored)
-                results['latex_factored'] = latex(factored)
-                
-            elif operation == 'simplify':
-                simplified = simplify(expr)
-                results['simplified'] = str(simplified)
-                results['latex_simplified'] = latex(simplified)
-                
-            elif operation == 'derivative':
-                var = list(expr.free_symbols)[0] if expr.free_symbols else self.x
-                derivative = diff(expr, var)
-                results['derivative'] = str(derivative)
-                results['latex_derivative'] = latex(derivative)
-                
-            elif operation == 'integral':
-                var = list(expr.free_symbols)[0] if expr.free_symbols else self.x
-                try:
-                    integral = integrate(expr, var)
-                    results['integral'] = str(integral)
-                    results['latex_integral'] = latex(integral)
-                except:
-                    results['integral'] = "Primitive non calculable symboliquement"
-                    
-        except Exception as e:
-            results['operation_error'] = str(e)
-        
-        return results
-    
-    def generate_graph_optimized(self, expr):
-        """Génération de graphiques optimisée avec cache"""
-        try:
-            graph_key = f"graph:{hash(str(expr))}"
-            if graph_key in self.graph_cache:
-                return self.graph_cache[graph_key]
-            
-            variables = expr.free_symbols
-            
-            if not variables or (len(variables) == 1 and self.x in variables):
-                graph_data = self._create_2d_plot_advanced(expr)
-            elif len(variables) == 2 and {self.x, self.y}.issubset(variables):
-                graph_data = self._create_3d_plot_advanced(expr)
-            else:
-                return None
-            
-            if graph_data:
-                self.graph_cache[graph_key] = graph_data
-            
-            return graph_data
-            
-        except Exception as e:
-            print(f"Erreur génération graphique optimisée: {e}")
-            return None
-    
-    def _create_2d_plot_advanced(self, expr):
-        """Crée un graphique 2D avancé avec style moderne"""
-        try:
-            fig, ax = plt.subplots(figsize=(12, 8), facecolor='#1a1a1a')
-            ax.set_facecolor('#2a2a2a')
-            
-            # Détermination intelligente de la plage
-            x_vals = np.linspace(-10, 10, 2000)
-            
-            # Conversion en fonction numpy avec gestion d'erreurs
-            f = lambdify(self.x, expr, ['numpy', 'scipy'], cse=True)
-            
-            try:
-                y_vals = f(x_vals)
-                # Nettoyage des valeurs
-                mask = np.isfinite(y_vals)
-                x_clean = x_vals[mask]
-                y_clean = y_vals[mask]
-                
-                if len(x_clean) > 0:
-                    # Graphique principal avec gradient
-                    ax.plot(x_clean, y_clean, color='#00d4ff', linewidth=3, 
-                           alpha=0.9, label=f'f(x) = {expr}')
-                    
-                    # Ajout d'un effet d'ombre
-                    ax.plot(x_clean, y_clean, color='#0099cc', linewidth=5, 
-                           alpha=0.3, zorder=1)
-                    
-            except Exception:
-                # Calcul point par point si échec
-                y_vals = []
-                x_vals_clean = []
-                for x_val in x_vals[::10]:  # Échantillonnage réduit
-                    try:
-                        y_val = complex(expr.subs(self.x, x_val))
-                        if y_val.imag == 0 and np.isfinite(y_val.real):
-                            y_vals.append(y_val.real)
-                            x_vals_clean.append(x_val)
-                    except:
-                        continue
-                
-                if len(y_vals) > 0:
-                    ax.plot(x_vals_clean, y_vals, color='#00d4ff', linewidth=3, 
-                           alpha=0.9, label=f'f(x) = {expr}')
-            
-            # Styling avancé
-            ax.grid(True, alpha=0.2, color='white', linestyle='-', linewidth=0.5)
-            ax.axhline(y=0, color='#ffffff', linewidth=1, alpha=0.8)
-            ax.axvline(x=0, color='#ffffff', linewidth=1, alpha=0.8)
-            
-            ax.set_xlabel('x', fontsize=14, color='white', fontweight='bold')
-            ax.set_ylabel('f(x)', fontsize=14, color='white', fontweight='bold')
-            ax.set_title(f'Graphique de f(x) = {expr}', fontsize=16, 
-                        color='#00d4ff', fontweight='bold', pad=20)
-            
-            # Légende stylée
-            legend = ax.legend(loc='upper right', frameon=True, fancybox=True, 
-                             shadow=True, framealpha=0.9)
-            legend.get_frame().set_facecolor('#3a3a3a')
-            legend.get_frame().set_edgecolor('#00d4ff')
-            
-            # Bordures et ticks
-            ax.tick_params(colors='white', labelsize=12)
-            for spine in ax.spines.values():
-                spine.set_color('#555555')
-                spine.set_linewidth(1.5)
-            
-            plt.tight_layout()
-            
-            # Export optimisé
-            buffer = io.BytesIO()
-            plt.savefig(buffer, format='png', bbox_inches='tight', 
-                       facecolor='#1a1a1a', edgecolor='none', dpi=100,
-                       optimize=True)
-            buffer.seek(0)
-            graph_base64 = base64.b64encode(buffer.getvalue()).decode()
-            plt.close(fig)
-            
-            return {
-                'type': '2D',
-                'image': graph_base64,
-                'expression': str(expr),
-                'resolution': '2000 points',
-                'style': 'advanced'
-            }
-            
-        except Exception as e:
-            print(f"Erreur plot 2D avancé: {e}")
-            return None
-    
-    def _create_3d_plot_advanced(self, expr):
-        """Crée un graphique 3D avancé"""
-        try:
-            fig = plt.figure(figsize=(14, 10), facecolor='#1a1a1a')
-            ax = fig.add_subplot(111, projection='3d')
-            ax.set_facecolor('#2a2a2a')
-            
-            # Grille haute résolution
-            x_vals = np.linspace(-5, 5, 80)
-            y_vals = np.linspace(-5, 5, 80)
-            X, Y = np.meshgrid(x_vals, y_vals)
-            
-            # Conversion optimisée
-            f = lambdify((self.x, self.y), expr, ['numpy'], cse=True)
-            
-            try:
-                Z = f(X, Y)
-                Z = np.where(np.isfinite(Z), Z, np.nan)
-                
-                # Surface avec colormap moderne
-                surface = ax.plot_surface(X, Y, Z, cmap='plasma', alpha=0.8, 
-                                        linewidth=0, antialiased=True, 
-                                        shade=True)
-                
-                # Contours projetés
-                contours = ax.contour(X, Y, Z, levels=15, colors='white', 
-                                    alpha=0.4, linewidths=1)
-                
-                # Styling 3D
-                ax.set_xlabel('x', fontsize=12, color='white')
-                ax.set_ylabel('y', fontsize=12, color='white')
-                ax.set_zlabel('f(x,y)', fontsize=12, color='white')
-                ax.set_title(f'Surface: f(x,y) = {expr}', fontsize=14, 
-                           color='#00d4ff', pad=20)
-                
-                # Colorbar stylée
-                cbar = fig.colorbar(surface, ax=ax, shrink=0.6, aspect=20)
-                cbar.ax.tick_params(colors='white')
-                
-                # Éclairage
-                ax.view_init(elev=25, azim=45)
-                
-            except Exception as e:
-                print(f"Erreur calcul surface 3D: {e}")
-                return None
-            
-            # Export optimisé
-            buffer = io.BytesIO()
-            plt.savefig(buffer, format='png', bbox_inches='tight', 
-                       facecolor='#1a1a1a', edgecolor='none', dpi=100)
-            buffer.seek(0)
-            graph_base64 = base64.b64encode(buffer.getvalue()).decode()
-            plt.close(fig)
-            
-            return {
-                'type': '3D',
-                'image': graph_base64,
-                'expression': str(expr),
-                'resolution': '80x80 points',
-                'style': 'advanced'
-            }
-            
-        except Exception as e:
-            print(f"Erreur plot 3D avancé: {e}")
-            return None
-    
-    def chat_with_mistral_optimized(self, message, context=None):
-        """Chat optimisé avec formatage intelligent"""
-        try:
-            client = self.get_best_mistral_client()
-            
-            system_prompt = """Tu es Mathia, un assistant mathématique expert et moderne.
-
-Règles de formatage IMPORTANTES:
-- N'utilise JAMAIS d'astérisques (*) pour la mise en forme
-- Utilise un langage naturel et fluide
-- Structure tes réponses avec des tirets (-) ou des numéros quand nécessaire
-- Explique de manière claire et accessible
-- Donne des exemples concrets
-- Sois concis mais complet
-
-Tes domaines d'expertise:
-- Algèbre et analyse avancée
-- Calcul différentiel et intégral
-- Géométrie analytique et trigonométrie
-- Statistiques et probabilités
-- Mathématiques discrètes et théorie des nombres
-- Optimisation et recherche opérationnelle
-
-Approche pédagogique: explique étape par étape, donne l'intuition derrière les concepts."""
-            
-            messages = [{"role": "system", "content": system_prompt}]
-            
-            if context:
-                context_msg = f"Contexte du calcul: {context}"
-                messages.append({"role": "assistant", "content": context_msg})
+            # Ajouter l'historique récent
+            for hist_msg in self.conversation_history[-3:]:
+                messages.extend([
+                    {"role": "user", "content": hist_msg['user']},
+                    {"role": "assistant", "content": hist_msg['assistant'][:500]}  # Limiter la taille
+                ])
             
             messages.append({"role": "user", "content": message})
             
             response = client.chat.complete(
                 model="mistral-large-latest",
                 messages=messages,
-                temperature=0.2,  # Réduction pour plus de cohérence
-                max_tokens=1200,
-                top_p=0.9
+                temperature=0.3,
+                max_tokens=1500
             )
             
-            # Post-traitement pour enlever les astérisques
             response_text = response.choices[0].message.content.strip()
-            response_text = response_text.replace('**', '').replace('*', '')
             
-            # Mise à jour des stats et du tracking des clés
-            self.stats['chat_messages'] += 1
-            if self.current_key_index in self.key_errors:
-                self.key_errors[self.current_key_index] = max(0, self.key_errors[self.current_key_index] - 1)
+            # Tenter de parser la réponse JSON
+            visual_data = None
+            try:
+                # Chercher le JSON dans la réponse
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    response_json = json.loads(json_match.group())
+                    text_response = response_json.get('text_response', response_text)
+                    visual_needed = response_json.get('visual_needed', len(visual_needs) > 0)
+                    visual_type = response_json.get('visual_type', visual_needs[0] if visual_needs else 'function')
+                    
+                    if visual_needed:
+                        visual_data = self.create_concept_visualization(visual_type, math_expressions)
+                        if visual_data:
+                            self.stats['visualizations'] += 1
+                else:
+                    text_response = response_text
+                    # Générer un visuel basé sur l'analyse du message
+                    if visual_needs:
+                        visual_data = self.create_concept_visualization(visual_needs[0], math_expressions)
+                        if visual_data:
+                            self.stats['visualizations'] += 1
+            except:
+                text_response = response_text
+                # Fallback: générer un visuel si des besoins ont été détectés
+                if visual_needs:
+                    visual_data = self.create_concept_visualization(visual_needs[0], math_expressions)
+                    if visual_data:
+                        self.stats['visualizations'] += 1
+            
+            # Nettoyer la réponse texte (supprimer le JSON s'il est présent)
+            text_response = re.sub(r'\{.*\}', '', text_response, flags=re.DOTALL).strip()
+            if not text_response:
+                text_response = response_text
+            
+            # Ajouter à l'historique
+            self.conversation_history.append({
+                'user': message,
+                'assistant': text_response,
+                'visual': visual_data is not None,
+                'timestamp': time.time()
+            })
+            
+            # Limiter l'historique
+            if len(self.conversation_history) > 20:
+                self.conversation_history = self.conversation_history[-15:]
+            
+            self.stats['messages'] += 1
+            if math_expressions:
+                self.stats['functions_analyzed'] += 1
+            if any(concept in message.lower() for concept in ['concept', 'principe', 'théorème']):
+                self.stats['concepts_explained'] += 1
             
             return {
-                'success': True, 
-                'response': response_text,
-                'response_time': 'optimized'
+                'success': True,
+                'response': text_response,
+                'visual': visual_data,
+                'visual_type': visual_needs[0] if visual_needs else None,
+                'math_detected': len(math_expressions) > 0
             }
             
         except Exception as e:
-            # Incrémenter les erreurs pour cette clé
-            if self.current_key_index in self.key_errors:
-                self.key_errors[self.current_key_index] += 1
-            return {'success': False, 'error': str(e)}
+            print(f"Erreur chat visuel: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'response': 'Désolé, une erreur est survenue. Pouvez-vous reformuler votre question ?'
+            }
 
-# Instance globale optimisée
-mathia = MathiaCore()
+# Instance globale
+mathia = MathiaVisualCore()
 
 @app.route('/')
 def index():
-    """Interface Mathia repensée et optimisée"""
-    return render_template_string(MATHIA_TEMPLATE)
-
-@app.route('/api/calculate', methods=['POST'])
-def calculate():
-    """API de calcul optimisée"""
-    try:
-        data = request.get_json()
-        expression = data.get('expression', '').strip()
-        operation = data.get('operation', 'solve')
-        
-        if not expression:
-            return jsonify({'success': False, 'error': 'Expression requise'})
-        
-        result = mathia.solve_expression_optimized(expression, operation)
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+    """Interface Mathia centrée sur le chat visuel"""
+    return render_template_string(MATHIA_VISUAL_TEMPLATE)
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """API de chat optimisée"""
+    """API principale de chat avec visuels"""
     try:
         data = request.get_json()
         message = data.get('message', '').strip()
-        context = data.get('context')
         
         if not message:
             return jsonify({'success': False, 'error': 'Message requis'})
         
-        result = mathia.chat_with_mistral_optimized(message, context)
+        result = mathia.chat_with_visual_response(message)
         return jsonify(result)
         
     except Exception as e:
@@ -592,21 +516,21 @@ def chat():
 
 @app.route('/api/stats')
 def get_stats():
-    """API des statistiques étendues"""
+    """API des statistiques"""
     return jsonify(mathia.stats)
 
 @app.route('/health')
 def health_check():
-    """Health check optimisé"""
-    return jsonify({'status': 'OK', 'service': 'Mathia', 'version': '2.0'}), 200
+    """Health check"""
+    return jsonify({'status': 'OK', 'service': 'Mathia Visual', 'version': '3.0'}), 200
 
-# Template HTML moderne et optimisé
-MATHIA_TEMPLATE = '''<!DOCTYPE html>
+# Template HTML moderne centré sur le chat
+MATHIA_VISUAL_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mathia - Assistant Mathématique Avancé</title>
+    <title>Mathia - Assistant Mathématique Visuel</title>
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script>
@@ -623,47 +547,39 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         :root {
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --bg-dark: #0a0a0f;
-            --bg-card: rgba(20, 20, 30, 0.95);
-            --bg-input: rgba(30, 30, 45, 0.8);
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1a1a3a;
+            --bg-tertiary: #2a2a4a;
             --text-primary: #ffffff;
             --text-secondary: #b8bcc8;
-            --text-accent: #00d4ff;
-            --border-subtle: rgba(255, 255, 255, 0.1);
-            --border-focus: rgba(0, 212, 255, 0.5);
-            --shadow-card: 0 20px 40px rgba(0, 0, 0, 0.4);
-            --shadow-button: 0 8px 20px rgba(102, 126, 234, 0.3);
+            --accent: #00d4ff;
+            --accent-secondary: #667eea;
             --success: #00ff88;
             --error: #ff4757;
-            --warning: #ffa502;
+            --border: rgba(255, 255, 255, 0.1);
+            --shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
         }
         
         body {
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: var(--bg-dark);
-            background-image: 
-                radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.15) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.15) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(120, 219, 226, 0.1) 0%, transparent 50%);
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
             color: var(--text-primary);
-            line-height: 1.6;
             min-height: 100vh;
         }
         
-        /* Header moderne */
+        /* Header */
         .header {
             position: sticky;
             top: 0;
             z-index: 100;
-            background: rgba(10, 10, 15, 0.95);
+            background: rgba(15, 15, 35, 0.95);
             backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border-subtle);
+            border-bottom: 1px solid var(--border);
             padding: 1rem 0;
         }
         
         .header-content {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 0 2rem;
             display: flex;
@@ -672,48 +588,15 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         .logo {
-            font-size: 1.8rem;
+            font-size: 2rem;
             font-weight: 800;
-            background: var(--primary-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .nav-tabs {
+            color: var(--accent);
             display: flex;
+            align-items: center;
             gap: 0.5rem;
-            background: rgba(30, 30, 45, 0.6);
-            padding: 0.5rem;
-            border-radius: 20px;
-            border: 1px solid var(--border-subtle);
         }
         
-        .nav-tab {
-            padding: 0.8rem 1.5rem;
-            background: transparent;
-            border: none;
-            border-radius: 15px;
-            color: var(--text-secondary);
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            white-space: nowrap;
-        }
-        
-        .nav-tab.active {
-            background: var(--primary-gradient);
-            color: white;
-            box-shadow: var(--shadow-button);
-            transform: translateY(-2px);
-        }
-        
-        .nav-tab:hover:not(.active) {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text-primary);
-        }
-        
-        .stats-display {
+        .stats {
             display: flex;
             gap: 2rem;
             font-size: 0.9rem;
@@ -724,119 +607,185 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-tertiary);
+            border-radius: 15px;
+            border: 1px solid var(--border);
         }
         
         /* Container principal */
         .container {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 2rem;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+            min-height: calc(100vh - 100px);
         }
         
-        /* Sections de contenu */
-        .content-section {
-            display: none;
-            animation: fadeIn 0.4s ease;
+        /* Chat principal */
+        .chat-container {
+            background: var(--bg-secondary);
+            border-radius: 25px;
+            padding: 2rem;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 200px);
         }
         
-        .content-section.active {
-            display: block;
+        .chat-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 1.5rem;
+            text-align: center;
         }
         
-        @keyframes fadeIn {
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            border: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+            scroll-behavior: smooth;
+        }
+        
+        .message {
+            margin-bottom: 2rem;
+            animation: messageSlide 0.4s ease;
+        }
+        
+        @keyframes messageSlide {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
         
-        /* Section calculateur */
-        .calculator-section {
-            background: var(--bg-card);
-            border-radius: 25px;
-            padding: 2.5rem;
-            margin-bottom: 2rem;
-            border: 1px solid var(--border-subtle);
-            box-shadow: var(--shadow-card);
-            backdrop-filter: blur(20px);
+        .message-user {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 1rem;
         }
         
-        .input-container {
-            position: relative;
+        .message-assistant {
+            display: flex;
+            justify-content: flex-start;
             margin-bottom: 2rem;
         }
         
-        .math-input {
-            width: 100%;
+        .message-bubble {
+            max-width: 80%;
+            padding: 1.2rem 1.8rem;
+            border-radius: 20px;
+            word-wrap: break-word;
+            line-height: 1.6;
+        }
+        
+        .message-user .message-bubble {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            color: white;
+            border-bottom-right-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+        }
+        
+        .message-assistant .message-bubble {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 8px;
+        }
+        
+        .message-sender {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        
+        .visual-container {
+            margin-top: 1.5rem;
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+        
+        .visual-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+        }
+        
+        .visual-label {
+            color: var(--accent);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        
+        /* Input zone */
+        .chat-input-container {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-end;
+            background: var(--bg-tertiary);
+            padding: 1.5rem;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+        }
+        
+        .chat-input {
+            flex: 1;
             padding: 1.2rem 1.5rem;
-            background: var(--bg-input);
-            border: 2px solid var(--border-subtle);
+            background: var(--bg-primary);
+            border: 2px solid var(--border);
             border-radius: 15px;
             color: var(--text-primary);
-            font-size: 1.1rem;
-            font-family: 'JetBrains Mono', 'Consolas', monospace;
+            font-size: 1rem;
+            resize: vertical;
+            min-height: 60px;
+            max-height: 150px;
             transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
+            font-family: inherit;
         }
         
-        .math-input:focus {
+        .chat-input:focus {
             outline: none;
-            border-color: var(--border-focus);
+            border-color: var(--accent);
             box-shadow: 0 0 0 4px rgba(0, 212, 255, 0.1);
-            background: rgba(30, 30, 45, 0.9);
+            background: rgba(26, 26, 58, 0.8);
         }
         
-        .math-input::placeholder {
+        .chat-input::placeholder {
             color: var(--text-secondary);
             opacity: 0.7;
         }
         
-        .input-suggestions {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            background: var(--bg-card);
-            border: 1px solid var(--border-subtle);
-            border-radius: 10px;
-            margin-top: 0.5rem;
-            max-height: 200px;
-            overflow-y: auto;
-            z-index: 10;
-            display: none;
-        }
-        
-        .suggestion-item {
-            padding: 0.8rem 1rem;
-            cursor: pointer;
-            border-bottom: 1px solid var(--border-subtle);
-            transition: background 0.2s ease;
-        }
-        
-        .suggestion-item:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-        
-        .operation-buttons {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-        
-        .operation-btn {
-            padding: 1rem;
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.8), rgba(118, 75, 162, 0.8));
-            border: 1px solid var(--border-focus);
-            border-radius: 12px;
+        .send-button {
+            padding: 1.2rem 2rem;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            border: none;
+            border-radius: 15px;
             color: white;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
+            white-space: nowrap;
             position: relative;
             overflow: hidden;
         }
         
-        .operation-btn:before {
+        .send-button:before {
             content: '';
             position: absolute;
             top: 0;
@@ -847,293 +796,26 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             transition: left 0.5s ease;
         }
         
-        .operation-btn:hover:before {
+        .send-button:hover:before {
             left: 100%;
         }
         
-        .operation-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
-        }
-        
-        .operation-btn:active {
-            transform: translateY(-1px);
-        }
-        
-        .operation-btn.loading {
-            opacity: 0.7;
-            cursor: not-allowed;
-        }
-        
-        /* Résultats */
-        .results-container {
-            background: var(--bg-card);
-            border-radius: 20px;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            border: 1px solid var(--border-subtle);
-            display: none;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .results-container.show {
-            display: block;
-            animation: slideInUp 0.5s ease;
-        }
-        
-        @keyframes slideInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .result-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border-subtle);
-        }
-        
-        .result-title {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: var(--text-accent);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .result-meta {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-        }
-        
-        .result-content {
-            display: grid;
-            gap: 1.5rem;
-        }
-        
-        .result-item {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 1.5rem;
-            border-radius: 12px;
-            border-left: 4px solid var(--text-accent);
-        }
-        
-        .result-label {
-            font-weight: 600;
-            color: var(--text-accent);
-            margin-bottom: 0.5rem;
-            text-transform: uppercase;
-            font-size: 0.85rem;
-            letter-spacing: 0.5px;
-        }
-        
-        .result-value {
-            font-size: 1.1rem;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-primary);
-            word-break: break-all;
-        }
-        
-        .graph-container {
-            background: var(--bg-card);
-            border-radius: 20px;
-            padding: 2rem;
-            text-align: center;
-            border: 1px solid var(--border-subtle);
-            margin-top: 2rem;
-        }
-        
-        .graph-container img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-        }
-        
-        .graph-info {
-            margin-top: 1rem;
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-        }
-        
-        /* Section chat */
-        .chat-container {
-            background: var(--bg-card);
-            border-radius: 25px;
-            padding: 2rem;
-            height: 600px;
-            display: flex;
-            flex-direction: column;
-            border: 1px solid var(--border-subtle);
-            box-shadow: var(--shadow-card);
-        }
-        
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1rem;
-            margin-bottom: 1.5rem;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 15px;
-            border: 1px solid var(--border-subtle);
-        }
-        
-        .chat-message {
-            margin-bottom: 1.5rem;
-            padding: 1rem 1.5rem;
-            border-radius: 18px;
-            max-width: 85%;
-            word-wrap: break-word;
-            animation: messageSlide 0.3s ease;
-        }
-        
-        @keyframes messageSlide {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .chat-message.user {
-            background: var(--primary-gradient);
-            color: white;
-            margin-left: auto;
-            border-bottom-right-radius: 8px;
-        }
-        
-        .chat-message.assistant {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text-primary);
-            border: 1px solid var(--border-subtle);
-            border-bottom-left-radius: 8px;
-        }
-        
-        .message-sender {
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            font-size: 0.9rem;
-            opacity: 0.8;
-        }
-        
-        .message-content {
-            line-height: 1.6;
-        }
-        
-        .chat-input-container {
-            display: flex;
-            gap: 1rem;
-            align-items: flex-end;
-        }
-        
-        .chat-input {
-            flex: 1;
-            padding: 1rem 1.5rem;
-            background: var(--bg-input);
-            border: 2px solid var(--border-subtle);
-            border-radius: 15px;
-            color: var(--text-primary);
-            resize: vertical;
-            min-height: 60px;
-            max-height: 150px;
-            transition: all 0.3s ease;
-        }
-        
-        .chat-input:focus {
-            outline: none;
-            border-color: var(--border-focus);
-            box-shadow: 0 0 0 4px rgba(0, 212, 255, 0.1);
-        }
-        
-        .chat-send-btn {
-            padding: 1rem 2rem;
-            background: var(--primary-gradient);
-            border: none;
-            border-radius: 15px;
-            color: white;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            white-space: nowrap;
-        }
-        
-        .chat-send-btn:hover {
+        .send-button:hover {
             transform: translateY(-2px);
-            box-shadow: var(--shadow-button);
+            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.4);
         }
         
-        .chat-send-btn:disabled {
+        .send-button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
         }
         
-        /* Section théorèmes */
-        .theorems-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 2rem;
-            margin-top: 2rem;
-        }
-        
-        .theorem-card {
-            background: var(--bg-card);
-            border-radius: 20px;
-            padding: 2rem;
-            border: 1px solid var(--border-subtle);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .theorem-card:hover {
-            transform: translateY(-5px);
-            box-shadow: var(--shadow-card);
-            border-color: var(--border-focus);
-        }
-        
-        .theorem-category {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            background: var(--primary-gradient);
-            color: white;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 1rem;
-        }
-        
-        .theorem-title {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: var(--text-accent);
-            margin-bottom: 1rem;
-        }
-        
-        .theorem-content {
-            color: var(--text-secondary);
-            line-height: 1.7;
-            font-size: 1rem;
-        }
-        
-        .theorem-formula {
-            background: rgba(0, 212, 255, 0.1);
-            padding: 1rem;
-            border-radius: 10px;
-            margin: 1rem 0;
-            border-left: 3px solid var(--text-accent);
-            font-family: 'JetBrains Mono', monospace;
-        }
-        
-        /* Utilitaires */
         .loading-spinner {
-            width: 20px;
-            height: 20px;
-            border: 3px solid var(--border-subtle);
-            border-top: 3px solid var(--text-accent);
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             display: inline-block;
@@ -1145,9 +827,10 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             100% { transform: rotate(360deg); }
         }
         
+        /* Notifications */
         .notification {
             position: fixed;
-            top: 90px;
+            top: 100px;
             right: 20px;
             padding: 1rem 1.5rem;
             border-radius: 15px;
@@ -1156,10 +839,9 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             z-index: 1000;
             transform: translateX(400px);
             transition: all 0.4s ease;
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--border-subtle);
             max-width: 350px;
-            box-shadow: var(--shadow-card);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(20px);
         }
         
         .notification.show {
@@ -1175,7 +857,65 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         .notification.info {
-            background: var(--primary-gradient);
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+        }
+        
+        /* Messages d'aide */
+        .help-message {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            color: var(--text-primary);
+        }
+        
+        .help-title {
+            color: var(--accent);
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .examples {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .example {
+            background: var(--bg-tertiary);
+            padding: 1rem;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+        
+        .example:hover {
+            background: rgba(0, 212, 255, 0.1);
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+        
+        /* Scrollbar personnalisé */
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .chat-messages::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 10px;
+        }
+        
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-secondary);
         }
         
         /* Responsive */
@@ -1186,41 +926,36 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 padding: 0 1rem;
             }
             
-            .nav-tabs {
-                width: 100%;
-                justify-content: center;
-                overflow-x: auto;
-            }
-            
-            .stats-display {
-                justify-content: center;
-                flex-wrap: wrap;
+            .stats {
+                flex-direction: column;
+                gap: 0.5rem;
+                align-items: center;
             }
             
             .container {
                 padding: 1rem;
             }
             
-            .calculator-section,
             .chat-container {
+                height: calc(100vh - 250px);
                 padding: 1.5rem;
             }
             
-            .operation-buttons {
-                grid-template-columns: repeat(2, 1fr);
+            .chat-input-container {
+                flex-direction: column;
+                gap: 1rem;
             }
             
-            .theorems-grid {
+            .message-bubble {
+                max-width: 95%;
+            }
+            
+            .examples {
                 grid-template-columns: 1fr;
-            }
-            
-            .chat-container {
-                height: 500px;
             }
             
             .notification {
                 right: 10px;
-                top: 80px;
                 max-width: calc(100vw - 20px);
             }
         }
@@ -1229,664 +964,262 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <body>
     <div class="header">
         <div class="header-content">
-            <div class="logo">🔢 Mathia</div>
-            
-            <div class="nav-tabs">
-                <button class="nav-tab active" data-tab="calculator">
-                    Calculateur
-                </button>
-                <button class="nav-tab" data-tab="chat">
-                    Assistant IA
-                </button>
-                <button class="nav-tab" data-tab="theorems">
-                    Théorèmes
-                </button>
+            <div class="logo">
+                🎨 Mathia Visual
             </div>
             
-            <div class="stats-display">
-                <div class="stat-item">
-                    <span>📊</span>
-                    <span id="calcCount">0</span> calculs
-                </div>
-                <div class="stat-item">
-                    <span>📈</span>
-                    <span id="graphCount">0</span> graphiques
-                </div>
+            <div class="stats">
                 <div class="stat-item">
                     <span>💬</span>
-                    <span id="chatCount">0</span> messages
+                    <span id="messageCount">0</span> messages
+                </div>
+                <div class="stat-item">
+                    <span>📊</span>
+                    <span id="visualCount">0</span> visuels
+                </div>
+                <div class="stat-item">
+                    <span>🧮</span>
+                    <span id="functionCount">0</span> fonctions
+                </div>
+                <div class="stat-item">
+                    <span>💡</span>
+                    <span id="conceptCount">0</span> concepts
                 </div>
             </div>
         </div>
     </div>
 
     <div class="container">
-        <!-- Section Calculateur -->
-        <div id="calculator" class="content-section active">
-            <div class="calculator-section">
-                <h2 style="margin-bottom: 2rem; color: var(--text-accent); font-size: 1.8rem; font-weight: 700;">
-                    Calculateur Mathématique Avancé
-                </h2>
-                
-                <div class="input-container">
-                    <input type="text" id="mathInput" class="math-input" 
-                           placeholder="Entrez votre expression mathématique (ex: x^2 + 3*x + 2, sin(x), x^2 + y^2 = 25)"
-                           autocomplete="off">
-                    <div id="suggestions" class="input-suggestions"></div>
-                </div>
-                
-                <div class="operation-buttons">
-                    <button class="operation-btn" data-operation="solve">
-                        🎯 Résoudre
-                    </button>
-                    <button class="operation-btn" data-operation="analyze">
-                        📊 Analyser
-                    </button>
-                    <button class="operation-btn" data-operation="simplify">
-                        ✨ Simplifier
-                    </button>
-                    <button class="operation-btn" data-operation="expand">
-                        📐 Développer
-                    </button>
-                    <button class="operation-btn" data-operation="factor">
-                        🧩 Factoriser
-                    </button>
-                    <button class="operation-btn" data-operation="derivative">
-                        📈 Dériver
-                    </button>
-                    <button class="operation-btn" data-operation="integral">
-                        ∫ Intégrer
-                    </button>
-                </div>
-                
-                <div id="resultsContainer" class="results-container">
-                    <div class="result-header">
-                        <div class="result-title" id="resultTitle">
-                            Résultats
-                        </div>
-                        <div class="result-meta" id="resultMeta"></div>
-                    </div>
-                    <div id="resultContent" class="result-content"></div>
-                </div>
-                
-                <div id="graphContainer" class="graph-container" style="display: none;">
-                    <div id="graphContent"></div>
-                    <div class="graph-info" id="graphInfo"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Section Chat IA -->
-        <div id="chat" class="content-section">
-            <div class="chat-container">
-                <h2 style="margin-bottom: 1.5rem; color: var(--text-accent); font-size: 1.8rem; font-weight: 700;">
-                    Assistant IA Mathématique
-                </h2>
-                
-                <div id="chatMessages" class="chat-messages">
-                    <div class="chat-message assistant">
-                        <div class="message-sender">Mathia</div>
-                        <div class="message-content">
-                            Bonjour ! Je suis votre assistant mathématique avancé. Je peux vous aider avec tous vos problèmes mathématiques, expliquer des concepts complexes et vous guider dans vos calculs. Posez-moi vos questions !
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="chat-input-container">
-                    <textarea id="chatInput" class="chat-input" 
-                              placeholder="Posez votre question mathématique..."
-                              rows="2"></textarea>
-                    <button id="chatSendBtn" class="chat-send-btn">
-                        Envoyer
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Section Théorèmes -->
-        <div id="theorems" class="content-section">
-            <h2 style="margin-bottom: 2rem; color: var(--text-accent); font-size: 1.8rem; font-weight: 700; text-align: center;">
-                Bibliothèque de Théorèmes et Formules
-            </h2>
+        <div class="chat-container">
+            <div class="chat-title">Assistant Mathématique Visuel</div>
             
-            <div class="theorems-grid">
-                <div class="theorem-card">
-                    <div class="theorem-category">Algèbre</div>
-                    <div class="theorem-title">Identités Remarquables</div>
-                    <div class="theorem-content">
-                        Les formules fondamentales pour le développement et la factorisation :
-                        <div class="theorem-formula">
-                            (a + b)² = a² + 2ab + b²<br>
-                            (a - b)² = a² - 2ab + b²<br>
-                            (a + b)(a - b) = a² - b²<br>
-                            (a + b)³ = a³ + 3a²b + 3ab² + b³
+            <div id="chatMessages" class="chat-messages">
+                <div class="help-message">
+                    <div class="help-title">Bienvenue dans Mathia Visual !</div>
+                    <p>Je suis votre assistant mathématique qui combine explications claires et visualisations intelligentes. Je peux créer des graphiques automatiquement pour illustrer vos questions.</p>
+                    
+                    <div class="examples">
+                        <div class="example" onclick="useExample('Explique-moi la fonction f(x) = x² + 2x - 3')">
+                            📈 Analyser une fonction quadratique
+                        </div>
+                        <div class="example" onclick="useExample('Compare les croissances linéaire, quadratique et exponentielle')">
+                            📊 Comparer des croissances
+                        </div>
+                        <div class="example" onclick="useExample('Montre-moi les dérivées et leurs applications')">
+                            🔍 Explorer le calcul différentiel
+                        </div>
+                        <div class="example" onclick="useExample('Visualise la distribution normale en statistiques')">
+                            📉 Concepts statistiques
+                        </div>
+                        <div class="example" onclick="useExample('Explique la géométrie du cercle trigonométrique')">
+                            🎯 Géométrie et trigonométrie
+                        </div>
+                        <div class="example" onclick="useExample('Qu'est-ce que l'intégration et à quoi ça sert ?')">
+                            ∫ Calcul intégral
                         </div>
                     </div>
                 </div>
                 
-                <div class="theorem-card">
-                    <div class="theorem-category">Analyse</div>
-                    <div class="theorem-title">Dérivées Classiques</div>
-                    <div class="theorem-content">
-                        Formules de dérivation essentielles :
-                        <div class="theorem-formula">
-                            (x^n)' = n·x^(n-1)<br>
-                            (sin x)' = cos x<br>
-                            (cos x)' = -sin x<br>
-                            (e^x)' = e^x<br>
-                            (ln x)' = 1/x<br>
-                            (u·v)' = u'v + uv'
-                        </div>
+                <div class="message-assistant">
+                    <div class="message-bubble">
+                        <div class="message-sender">Mathia</div>
+                        Salut ! Je suis ravi de t'aider avec les mathématiques. Pose-moi n'importe quelle question et je créerai des visualisations pour t'aider à mieux comprendre. Que veux-tu explorer aujourd'hui ?
                     </div>
                 </div>
-                
-                <div class="theorem-card">
-                    <div class="theorem-category">Géométrie</div>
-                    <div class="theorem-title">Théorème de Pythagore</div>
-                    <div class="theorem-content">
-                        Dans un triangle rectangle, le carré de l'hypoténuse est égal à la somme des carrés des deux autres côtés :
-                        <div class="theorem-formula">
-                            c² = a² + b²
-                        </div>
-                        Où c est l'hypoténuse et a, b sont les côtés de l'angle droit.
-                    </div>
-                </div>
-                
-                <div class="theorem-card">
-                    <div class="theorem-category">Trigonométrie</div>
-                    <div class="theorem-title">Relations Trigonométriques</div>
-                    <div class="theorem-content">
-                        Identités fondamentales du cercle trigonométrique :
-                        <div class="theorem-formula">
-                            sin²x + cos²x = 1<br>
-                            tan x = sin x / cos x<br>
-                            sin(2x) = 2sin x cos x<br>
-                            cos(2x) = cos²x - sin²x<br>
-                            sin(a ± b) = sin a cos b ± cos a sin b
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="theorem-card">
-                    <div class="theorem-category">Analyse</div>
-                    <div class="theorem-title">Primitives Usuelles</div>
-                    <div class="theorem-content">
-                        Intégrales des fonctions classiques :
-                        <div class="theorem-formula">
-                            ∫ x^n dx = x^(n+1)/(n+1) + C<br>
-                            ∫ 1/x dx = ln|x| + C<br>
-                            ∫ e^x dx = e^x + C<br>
-                            ∫ sin x dx = -cos x + C<br>
-                            ∫ cos x dx = sin x + C
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="theorem-card">
-                    <div class="theorem-category">Algèbre</div>
-                    <div class="theorem-title">Résolution du Second Degré</div>
-                    <div class="theorem-content">
-                        Pour l'équation ax² + bx + c = 0 :
-                        <div class="theorem-formula">
-                            Δ = b² - 4ac<br>
-                            Si Δ > 0: x = (-b ± √Δ) / 2a<br>
-                            Si Δ = 0: x = -b / 2a<br>
-                            Si Δ < 0: pas de solution réelle
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="theorem-card">
-                    <div class="theorem-category">Analyse</div>
-                    <div class="theorem-title">Limites Remarquables</div>
-                    <div class="theorem-content">
-                        Limites importantes à retenir :
-                        <div class="theorem-formula">
-                            lim(x→0) sin x/x = 1<br>
-                            lim(x→∞) (1 + 1/x)^x = e<br>
-                            lim(x→0) (1+x)^(1/x) = e<br>
-                            lim(x→0) (e^x - 1)/x = 1<br>
-                            lim(x→0) ln(1+x)/x = 1
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="theorem-card">
-                    <div class="theorem-category">Probabilités</div>
-                    <div class="theorem-title">Lois de Probabilité</div>
-                    <div class="theorem-content">
-                        Formules essentielles du calcul probabiliste :
-                        <div class="theorem-formula">
-                            P(A ∪ B) = P(A) + P(B) - P(A ∩ B)<br>
-                            P(A|B) = P(A ∩ B) / P(B)<br>
-                            P(A ∩ B) = P(A|B) × P(B)<br>
-                            E(X) = Σ x·P(X=x) (espérance)<br>
-                            Var(X) = E(X²) - [E(X)]²
-                        </div>
-                    </div>
-                </div>
+            </div>
+            
+            <div class="chat-input-container">
+                <textarea id="chatInput" class="chat-input" 
+                          placeholder="Posez votre question mathématique... (ex: 'Montre-moi la fonction sin(x) et ses propriétés')"
+                          rows="2"></textarea>
+                <button id="sendButton" class="send-button">
+                    Envoyer
+                </button>
             </div>
         </div>
     </div>
 
     <script>
-        let currentCalculation = null;
-        let chatHistory = [];
-        
-        // Suggestions d'expressions mathématiques
-        const mathSuggestions = [
-            'x^2 + 3*x + 2',
-            'sin(x) + cos(x)',
-            'e^x - 1',
-            'ln(x) + sqrt(x)',
-            'x^3 - 2*x^2 + x - 1',
-            '(x + 1)^2 = 9',
-            'x^2 + y^2 = 25',
-            'tan(x) = 1',
-            'derivative of x^2 + sin(x)',
-            'integral of x*exp(x)'
-        ];
+        let isLoading = false;
+        let messageCount = 0;
         
         // Initialisation
         document.addEventListener('DOMContentLoaded', function() {
             setupEventListeners();
             loadStats();
-            setupAutoSuggestions();
-            focusInput();
+            focusChatInput();
         });
         
         function setupEventListeners() {
-            // Navigation entre onglets
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.addEventListener('click', function() {
-                    switchTab(this.dataset.tab);
-                });
-            });
-            
-            // Boutons d'opération
-            document.querySelectorAll('.operation-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    performCalculation(this.dataset.operation);
-                });
-            });
-            
-            // Input mathématique
-            const mathInput = document.getElementById('mathInput');
-            mathInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    performCalculation('solve');
-                }
-            });
-            
-            // Chat
             const chatInput = document.getElementById('chatInput');
-            const chatSendBtn = document.getElementById('chatSendBtn');
+            const sendButton = document.getElementById('sendButton');
             
+            // Envoi avec Enter (Shift+Enter pour nouvelle ligne)
             chatInput.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    sendChatMessage();
+                    sendMessage();
                 }
             });
             
-            chatSendBtn.addEventListener('click', sendChatMessage);
-        }
-        
-        function setupAutoSuggestions() {
-            const input = document.getElementById('mathInput');
-            const suggestionsDiv = document.getElementById('suggestions');
-            
-            input.addEventListener('input', function() {
-                const value = this.value.toLowerCase();
-                if (value.length < 2) {
-                    suggestionsDiv.style.display = 'none';
-                    return;
-                }
-                
-                const matches = mathSuggestions.filter(suggestion => 
-                    suggestion.toLowerCase().includes(value)
-                ).slice(0, 5);
-                
-                if (matches.length > 0) {
-                    suggestionsDiv.innerHTML = matches.map(match => 
-                        `<div class="suggestion-item" onclick="selectSuggestion('${match}')">${match}</div>`
-                    ).join('');
-                    suggestionsDiv.style.display = 'block';
-                } else {
-                    suggestionsDiv.style.display = 'none';
-                }
+            // Auto-resize du textarea
+            chatInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 150) + 'px';
             });
             
-            // Masquer les suggestions si clic ailleurs
-            document.addEventListener('click', function(e) {
-                if (!input.contains(e.target) && !suggestionsDiv.contains(e.target)) {
-                    suggestionsDiv.style.display = 'none';
-                }
-            });
+            sendButton.addEventListener('click', sendMessage);
         }
         
-        function selectSuggestion(suggestion) {
-            document.getElementById('mathInput').value = suggestion;
-            document.getElementById('suggestions').style.display = 'none';
-            focusInput();
+        function useExample(exampleText) {
+            document.getElementById('chatInput').value = exampleText;
+            focusChatInput();
         }
         
-        function switchTab(tabName) {
-            // Mise à jour des onglets
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-            
-            // Mise à jour du contenu
-            document.querySelectorAll('.content-section').forEach(section => {
-                section.classList.remove('active');
-            });
-            document.getElementById(tabName).classList.add('active');
-            
-            // Focus sur l'input approprié
-            if (tabName === 'calculator') {
-                setTimeout(() => focusInput(), 100);
-            } else if (tabName === 'chat') {
-                setTimeout(() => document.getElementById('chatInput').focus(), 100);
-            }
-        }
-        
-        function focusInput() {
-            document.getElementById('mathInput').focus();
-        }
-        
-        async function performCalculation(operation) {
-            const input = document.getElementById('mathInput').value.trim();
-            if (!input) {
-                showNotification('Veuillez entrer une expression mathématique', 'error');
-                focusInput();
-                return;
-            }
-            
-            // UI Loading
-            setCalculationLoading(true, operation);
-            hideResults();
-            
-            try {
-                const response = await fetch('/api/calculate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        expression: input, 
-                        operation: operation 
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    displayResults(data, operation);
-                    currentCalculation = data;
-                    showNotification('Calcul terminé avec succès !', 'success');
-                } else {
-                    showNotification(data.error, 'error');
-                }
-                
-                await loadStats();
-                
-            } catch (error) {
-                showNotification('Erreur de connexion: ' + error.message, 'error');
-                console.error('Erreur calcul:', error);
-            } finally {
-                setCalculationLoading(false);
-            }
-        }
-        
-        function setCalculationLoading(loading, operation = '') {
-            const buttons = document.querySelectorAll('.operation-btn');
-            buttons.forEach(btn => {
-                if (loading) {
-                    btn.classList.add('loading');
-                    btn.disabled = true;
-                    if (btn.dataset.operation === operation) {
-                        btn.innerHTML = '<div class="loading-spinner"></div>' + btn.textContent;
-                    }
-                } else {
-                    btn.classList.remove('loading');
-                    btn.disabled = false;
-                    btn.innerHTML = btn.innerHTML.replace('<div class="loading-spinner"></div>', '');
-                }
-            });
-        }
-        
-        function displayResults(data, operation) {
-            const container = document.getElementById('resultsContainer');
-            const title = document.getElementById('resultTitle');
-            const meta = document.getElementById('resultMeta');
-            const content = document.getElementById('resultContent');
-            const graphContainer = document.getElementById('graphContainer');
-            const graphContent = document.getElementById('graphContent');
-            const graphInfo = document.getElementById('graphInfo');
-            
-            // Titre et métadonnées
-            const operationTitles = {
-                'solve': '🎯 Solutions',
-                'analyze': '📊 Analyse Complète',
-                'simplify': '✨ Forme Simplifiée',
-                'expand': '📐 Forme Développée',
-                'factor': '🧩 Forme Factorisée',
-                'derivative': '📈 Dérivée',
-                'integral': '∫ Primitive'
-            };
-            
-            title.textContent = operationTitles[operation] || '🔍 Résultats';
-            
-            if (data.metadata) {
-                const vars = data.metadata.variables.length > 0 ? 
-                    data.metadata.variables.join(', ') : 'aucune';
-                meta.textContent = `Variables: ${vars} • Complexité: ${data.metadata.complexity}`;
-            }
-            
-            // Contenu des résultats
-            let html = `
-                <div class="result-item">
-                    <div class="result-label">Expression originale</div>
-                    <div class="result-value">${data.original}</div>
-                </div>
-                <div class="result-item">
-                    <div class="result-label">Forme parsée</div>
-                    <div class="result-value">${data.parsed}</div>
-                </div>
-            `;
-            
-            const results = data.results;
-            
-            // Affichage conditionnel selon les résultats
-            if (results.solutions) {
-                const solutionText = results.solutions.length > 0 ? 
-                    results.solutions.join('<br>') : 
-                    'Aucune solution réelle trouvée';
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Solutions (${results.solution_count || results.solutions.length})</div>
-                        <div class="result-value">${solutionText}</div>
-                    </div>
-                `;
-            }
-            
-            if (results.expanded) {
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Forme développée</div>
-                        <div class="result-value">${results.expanded}</div>
-                    </div>
-                `;
-            }
-            
-            if (results.factored) {
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Forme factorisée</div>
-                        <div class="result-value">${results.factored}</div>
-                    </div>
-                `;
-            }
-            
-            if (results.simplified) {
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Forme simplifiée</div>
-                        <div class="result-value">${results.simplified}</div>
-                    </div>
-                `;
-            }
-            
-            if (results.derivative) {
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Dérivée</div>
-                        <div class="result-value">${results.derivative}</div>
-                    </div>
-                `;
-            }
-            
-            if (results.integral) {
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Primitive</div>
-                        <div class="result-value">${results.integral}</div>
-                    </div>
-                `;
-            }
-            
-            // Résultats d'analyse complète
-            if (results.first_derivative) {
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Dérivée première</div>
-                        <div class="result-value">${results.first_derivative}</div>
-                    </div>
-                `;
-            }
-            
-            if (results.second_derivative) {
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Dérivée seconde</div>
-                        <div class="result-value">${results.second_derivative}</div>
-                    </div>
-                `;
-            }
-            
-            if (results.critical_points && results.critical_points.length > 0) {
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Points critiques</div>
-                        <div class="result-value">${results.critical_points.join(', ')}</div>
-                    </div>
-                `;
-            }
-            
-            if (results.limit_infinity) {
-                html += `
-                    <div class="result-item">
-                        <div class="result-label">Limite en +∞</div>
-                        <div class="result-value">${results.limit_infinity}</div>
-                    </div>
-                `;
-            }
-            
-            content.innerHTML = html;
-            container.classList.add('show');
-            
-            // Affichage du graphique
-            if (data.graph) {
-                graphContent.innerHTML = `
-                    <h3 style="color: var(--text-accent); margin-bottom: 1rem;">
-                        📊 Représentation Graphique
-                    </h3>
-                    <img src="data:image/png;base64,${data.graph.image}" alt="Graphique de la fonction">
-                `;
-                
-                graphInfo.innerHTML = `
-                    Type: ${data.graph.type} • 
-                    Résolution: ${data.graph.resolution} • 
-                    Style: ${data.graph.style}
-                `;
-                
-                graphContainer.style.display = 'block';
-            } else {
-                graphContainer.style.display = 'none';
-            }
-            
-            // Scroll vers les résultats
+        function focusChatInput() {
             setTimeout(() => {
-                container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                document.getElementById('chatInput').focus();
             }, 100);
         }
         
-        function hideResults() {
-            document.getElementById('resultsContainer').classList.remove('show');
-            document.getElementById('graphContainer').style.display = 'none';
-        }
-        
-        async function sendChatMessage() {
+        async function sendMessage() {
+            if (isLoading) return;
+            
             const input = document.getElementById('chatInput');
             const message = input.value.trim();
             
-            if (!message) return;
-            
-            const sendBtn = document.getElementById('chatSendBtn');
-            const messagesContainer = document.getElementById('chatMessages');
+            if (!message) {
+                showNotification('Veuillez entrer un message', 'error');
+                return;
+            }
             
             // Ajouter le message utilisateur
-            addChatMessage('user', 'Vous', message);
+            addUserMessage(message);
             input.value = '';
+            input.style.height = 'auto';
             
-            // UI loading
-            sendBtn.disabled = true;
-            sendBtn.innerHTML = '<div class="loading-spinner"></div>Réflexion...';
+            // UI de chargement
+            setLoading(true);
+            const tempId = addAssistantMessage('', true);
             
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        message: message,
-                        context: currentCalculation ? JSON.stringify(currentCalculation) : null
-                    })
+                    body: JSON.stringify({ message: message })
                 });
                 
                 const data = await response.json();
                 
+                // Supprimer le message temporaire
+                document.getElementById(tempId).remove();
+                
                 if (data.success) {
-                    addChatMessage('assistant', 'Mathia', data.response);
-                    chatHistory.push({ user: message, assistant: data.response });
-                    showNotification('Réponse reçue !', 'success');
+                    addAssistantMessage(data.response, false, data.visual, data.visual_type);
+                    
+                    if (data.visual) {
+                        showNotification('Visualisation générée !', 'success');
+                    }
+                    
+                    if (data.math_detected) {
+                        showNotification('Expression mathématique détectée', 'info');
+                    }
                 } else {
-                    addChatMessage('assistant', 'Mathia', 'Désolé, une erreur est survenue: ' + data.error);
+                    addAssistantMessage('Désolé, une erreur est survenue: ' + data.error, false);
+                    showNotification('Erreur lors du traitement', 'error');
                 }
                 
                 await loadStats();
                 
             } catch (error) {
-                addChatMessage('assistant', 'Mathia', 'Erreur de connexion. Veuillez réessayer.');
+                document.getElementById(tempId).remove();
+                addAssistantMessage('Erreur de connexion. Veuillez réessayer.', false);
                 showNotification('Erreur de connexion', 'error');
+                console.error('Erreur:', error);
             } finally {
-                sendBtn.disabled = false;
-                sendBtn.innerHTML = 'Envoyer';
-                input.focus();
+                setLoading(false);
+                focusChatInput();
             }
         }
         
-        function addChatMessage(type, sender, message) {
+        function addUserMessage(message) {
             const container = document.getElementById('chatMessages');
             const messageDiv = document.createElement('div');
-            messageDiv.className = `chat-message ${type}`;
+            messageDiv.className = 'message-user';
             
             messageDiv.innerHTML = `
-                <div class="message-sender">${sender}</div>
-                <div class="message-content">${message}</div>
+                <div class="message-bubble">
+                    <div class="message-sender">Vous</div>
+                    ${message}
+                </div>
             `;
             
             container.appendChild(messageDiv);
-            container.scrollTop = container.scrollHeight;
+            scrollToBottom();
+            messageCount++;
+        }
+        
+        function addAssistantMessage(message, isLoading = false, visualData = null, visualType = null) {
+            const container = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+            messageDiv.id = messageId;
+            messageDiv.className = 'message-assistant';
+            
+            let content = `
+                <div class="message-bubble">
+                    <div class="message-sender">Mathia</div>
+                    ${isLoading ? '<div class="loading-spinner"></div>Réflexion en cours...' : message}
+            `;
+            
+            if (visualData && !isLoading) {
+                const visualTypeLabels = {
+                    'function': '📈 Graphique de Fonction',
+                    'statistics': '📊 Analyse Statistique',
+                    'geometry': '🎯 Illustration Géométrique',
+                    'analysis': '🔍 Analyse Mathématique',
+                    'comparison': '⚖️ Comparaison Visual'
+                };
+                
+                const label = visualTypeLabels[visualType] || '📊 Visualisation';
+                
+                content += `
+                    <div class="visual-container">
+                        <div class="visual-label">${label}</div>
+                        <img src="data:image/png;base64,${visualData}" alt="Visualisation mathématique">
+                    </div>
+                `;
+            }
+            
+            content += '</div>';
+            messageDiv.innerHTML = content;
+            
+            container.appendChild(messageDiv);
+            scrollToBottom();
+            
+            return messageId;
+        }
+        
+        function setLoading(loading) {
+            const sendButton = document.getElementById('sendButton');
+            const chatInput = document.getElementById('chatInput');
+            
+            isLoading = loading;
+            sendButton.disabled = loading;
+            chatInput.disabled = loading;
+            
+            if (loading) {
+                sendButton.innerHTML = '<div class="loading-spinner"></div>Envoi...';
+            } else {
+                sendButton.innerHTML = 'Envoyer';
+            }
+        }
+        
+        function scrollToBottom() {
+            const container = document.getElementById('chatMessages');
+            setTimeout(() => {
+                container.scrollTop = container.scrollHeight;
+            }, 100);
         }
         
         async function loadStats() {
@@ -1894,9 +1227,10 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 const response = await fetch('/api/stats');
                 const stats = await response.json();
                 
-                document.getElementById('calcCount').textContent = stats.calculations || 0;
-                document.getElementById('graphCount').textContent = stats.graphs_generated || 0;
-                document.getElementById('chatCount').textContent = stats.chat_messages || 0;
+                document.getElementById('messageCount').textContent = stats.messages || 0;
+                document.getElementById('visualCount').textContent = stats.visualizations || 0;
+                document.getElementById('functionCount').textContent = stats.functions_analyzed || 0;
+                document.getElementById('conceptCount').textContent = stats.concepts_explained || 0;
                 
                 // Animation des compteurs
                 animateCounters();
@@ -1907,9 +1241,9 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         function animateCounters() {
-            document.querySelectorAll('#calcCount, #graphCount, #chatCount').forEach(counter => {
+            document.querySelectorAll('.stat-item span[id$="Count"]').forEach(counter => {
                 counter.style.transform = 'scale(1.1)';
-                counter.style.color = 'var(--text-accent)';
+                counter.style.color = 'var(--accent)';
                 setTimeout(() => {
                     counter.style.transform = 'scale(1)';
                     counter.style.color = '';
@@ -1937,93 +1271,85 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         
         // Raccourcis clavier
         document.addEventListener('keydown', function(e) {
-            // Ctrl/Cmd + Enter pour calculer
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                if (document.getElementById('calculator').classList.contains('active')) {
-                    performCalculation('solve');
-                }
-            }
-            
-            // Échap pour nettoyer les résultats
-            if (e.key === 'Escape') {
-                hideResults();
-                document.getElementById('suggestions').style.display = 'none';
-            }
-            
-            // Raccourcis pour les onglets (Ctrl/Cmd + 1, 2, 3)
-            if ((e.ctrlKey || e.metaKey) && ['1', '2', '3'].includes(e.key)) {
-                const tabs = ['calculator', 'chat', 'theorems'];
-                const tabIndex = parseInt(e.key) - 1;
-                if (tabs[tabIndex]) {
-                    switchTab(tabs[tabIndex]);
-                }
+            // Ctrl/Cmd + L pour nettoyer le chat
+            if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
                 e.preventDefault();
+                if (confirm('Voulez-vous nettoyer la conversation ?')) {
+                    const messagesContainer = document.getElementById('chatMessages');
+                    const messages = messagesContainer.querySelectorAll('.message-user, .message-assistant:not(.help-message)');
+                    messages.forEach(msg => {
+                        if (!msg.querySelector('.help-message')) {
+                            msg.remove();
+                        }
+                    });
+                    focusChatInput();
+                }
+            }
+            
+            // Escape pour annuler si en cours de chargement
+            if (e.key === 'Escape' && isLoading) {
+                setLoading(false);
+                focusChatInput();
             }
         });
         
-        // Gestion de la visibilité de la page (performance)
+        // Gestion de la visibilité de la page
         document.addEventListener('visibilitychange', function() {
-            if (document.hidden) {
-                // Page cachée - économiser les ressources
-                return;
-            } else {
-                // Page visible - mettre à jour les stats
+            if (!document.hidden) {
                 loadStats();
             }
         });
         
-        // Auto-resize pour le textarea du chat
-        document.getElementById('chatInput').addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 150) + 'px';
-        });
+        // Chargement initial des stats
+        loadStats();
     </script>
 </body>
 </html>'''
 
 if __name__ == '__main__':
-    print("🔢 MATHIA V2.0 - Assistant Mathématique IA Avancé")
+    print("🎨 MATHIA VISUAL V3.0 - Assistant Mathématique Visuel")
     print("=" * 60)
     
     try:
-        # Vérification des dépendances critiques
+        # Vérifications
         import sympy
         import matplotlib
         import numpy as np
         from mistralai import Mistral
-        print("✅ Toutes les dépendances critiques sont installées")
+        print("✅ Dépendances installées")
         
-        # Test de l'environnement matplotlib
         matplotlib.use('Agg')
         print("✅ Backend matplotlib configuré")
         
-        # Configuration pour le déploiement
         port = int(os.environ.get('PORT', 5000))
         debug_mode = os.environ.get('FLASK_ENV') != 'production'
         
-        print(f"🌐 Port d'écoute: {port}")
-        print(f"🔧 Mode debug: {debug_mode}")
-        print(f"🔑 Clés API Mistral: {len(mathia.api_keys)} configurées")
-        print(f"🧮 Cache: {len(mathia.calculation_cache)} entrées")
-        print(f"📊 Graphiques en cache: {len(mathia.graph_cache)} entrées")
-        print(f"⚡ Pool de threads: {mathia.executor._max_workers} workers")
+        print(f"🌐 Port: {port}")
+        print(f"🔧 Debug: {debug_mode}")
+        print(f"🔑 Clés Mistral: {len(mathia.api_keys)} configurées")
+        print(f"🎨 Cache visuels: {len(mathia.visual_cache)} entrées")
+        print(f"💬 Historique: {len(mathia.conversation_history)} conversations")
         
-        print("\n🎯 Fonctionnalités activées:")
-        print("   • Calcul symbolique avancé avec cache")
-        print("   • Génération de graphiques 2D/3D optimisée")
-        print("   • Assistant IA avec rotation de clés")
-        print("   • Interface moderne et responsive")
-        print("   • Bibliothèque de théorèmes étendue")
+        print("\n🚀 Fonctionnalités:")
+        print("   • Chat central avec IA Mistral")
+        print("   • Génération automatique de graphiques")
+        print("   • Détection intelligente des besoins visuels")
+        print("   • Visualisations contextuelles (fonctions, stats, géométrie)")
+        print("   • Interface moderne responsive")
+        print("   • Exemples interactifs pour démarrer")
+        
+        print("\n🎯 Types de visualisations supportées:")
+        print("   • Fonctions mathématiques (2D/3D)")
+        print("   • Analyses statistiques")
+        print("   • Concepts géométriques")
+        print("   • Calcul différentiel et intégral")
+        print("   • Comparaisons de données")
         
         print("\n🚀 Démarrage du serveur...")
         
     except ImportError as e:
-        print(f"❌ ERREUR: Dépendance manquante - {e}")
-        print("\n💡 Installation requise:")
-        print("   pip install flask sympy matplotlib numpy mistralai")
+        print(f"❌ ERREUR: {e}")
         exit(1)
-    except Exception as e:
-        print(f"⚠️ Avertissement: {e}")
     
     app.run(
         host='0.0.0.0',
