@@ -23,14 +23,19 @@ except ImportError as e:
 # Importer l'app de Mathia avec importlib pour éviter les conflits
 try:
     mathia_path = os.path.join(os.path.dirname(__file__), 'mathia', 'app.py')
-    spec = importlib.util.spec_from_file_location("mathia_module", mathia_path)
-    mathia_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mathia_module)
-    
-    mathia_app = mathia_module.app
-    mathia = mathia_module.mathia
-    
-    print("✅ App Mathia importée avec succès")
+    if os.path.exists(mathia_path):
+        spec = importlib.util.spec_from_file_location("mathia_module", mathia_path)
+        mathia_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mathia_module)
+        
+        mathia_app = mathia_module.app
+        mathia = mathia_module.mathia
+        
+        print("✅ App Mathia importée avec succès")
+    else:
+        print(f"❌ Fichier Mathia non trouvé: {mathia_path}")
+        mathia_app = None
+        mathia = None
 except Exception as e:
     print(f"❌ Erreur import Mathia: {e}")
     mathia_app = None
@@ -119,16 +124,16 @@ def wikisummarizer():
         return html_interface
 
 @app.route('/mathia')
+@app.route('/mathia/')
 def mathia_page():
     """Servir l'interface Mathia complète"""
     if mathia_app:
-        # Si l'app Mathia est disponible, servir son interface
+        # Utiliser directement la fonction index de l'app Mathia
         try:
-            # Chercher le fichier index.html dans le dossier mathia
-            return send_from_directory('mathia', 'index.html')
-        except:
-            # Si pas de fichier HTML, utiliser l'interface de l'app importée
-            return mathia_app.view_functions['index']() if 'index' in mathia_app.view_functions else redirect('/')
+            return mathia_app.view_functions['index']()
+        except Exception as e:
+            print(f"Erreur lors de l'appel de l'interface Mathia: {e}")
+            return redirect('/')
     else:
         # Interface de fallback si l'import a échoué
         html_interface = '''<!DOCTYPE html>
@@ -195,7 +200,7 @@ def mathia_page():
 </html>'''
         return html_interface
 
-# Routes API du Wikisummarizer
+# Routes API du Wikisummarizer - GARDÉES IDENTIQUES
 @app.route('/api/summarize', methods=['POST'])
 def api_summarize():
     """Proxy vers l'API du summarizer"""
@@ -212,20 +217,15 @@ def api_stats():
     else:
         return jsonify({'error': 'Wikisummarizer non disponible'}), 500
 
-# Routes API de Mathia
-@app.route('/api/calculate/quadratic', methods=['POST'])
-def api_mathia_quadratic():
-    """Proxy vers l'API quadratique de Mathia"""
+# Routes API de Mathia - SIMPLIFIÉES POUR LA NOUVELLE VERSION
+@app.route('/api/calculate', methods=['POST'])
+def api_mathia_calculate():
+    """Proxy vers l'API principale de calcul de Mathia"""
     if mathia_app and mathia:
-        return mathia_app.view_functions['calculate_quadratic']()
-    else:
-        return jsonify({'success': False, 'error': 'Mathia non disponible'}), 500
-
-@app.route('/api/calculate/general', methods=['POST'])
-def api_mathia_general():
-    """Proxy vers l'API calculs généraux de Mathia"""
-    if mathia_app and mathia:
-        return mathia_app.view_functions['calculate_general']()
+        try:
+            return mathia_app.view_functions['calculate']()
+        except KeyError:
+            return jsonify({'success': False, 'error': 'Route calculate non trouvée dans Mathia'}), 500
     else:
         return jsonify({'success': False, 'error': 'Mathia non disponible'}), 500
 
@@ -233,39 +233,21 @@ def api_mathia_general():
 def api_mathia_chat():
     """Proxy vers l'API chat de Mathia"""
     if mathia_app and mathia:
-        return mathia_app.view_functions['chat']()
+        try:
+            return mathia_app.view_functions['chat']()
+        except KeyError:
+            return jsonify({'success': False, 'error': 'Route chat non trouvée dans Mathia'}), 500
     else:
         return jsonify({'success': False, 'error': 'Mathia non disponible'}), 500
-
-@app.route('/api/library/upload', methods=['POST'])
-def api_mathia_upload():
-    """Proxy vers l'API upload de Mathia"""
-    if mathia_app and mathia:
-        return mathia_app.view_functions['upload_file']()
-    else:
-        return jsonify({'success': False, 'error': 'Mathia non disponible'}), 500
-
-@app.route('/api/library/list', methods=['GET'])
-def api_mathia_list():
-    """Proxy vers l'API liste fichiers de Mathia"""
-    if mathia_app and mathia:
-        return mathia_app.view_functions['list_files']()
-    else:
-        return jsonify({'success': False, 'error': 'Mathia non disponible'}), 500
-
-@app.route('/api/library/download/<category>/<filename>')
-def api_mathia_download(category, filename):
-    """Proxy vers l'API téléchargement de Mathia"""
-    if mathia_app and mathia:
-        return mathia_app.view_functions['download_file'](category, filename)
-    else:
-        return jsonify({'error': 'Mathia non disponible'}), 500
 
 @app.route('/api/mathia/stats', methods=['GET'])
 def api_mathia_stats():
     """Proxy vers les stats de Mathia"""
     if mathia_app and mathia:
-        return mathia_app.view_functions['get_stats']()
+        try:
+            return mathia_app.view_functions['get_stats']()
+        except KeyError:
+            return jsonify({'error': 'Route stats non trouvée dans Mathia'}), 500
     else:
         return jsonify({'error': 'Mathia non disponible'}), 500
 
