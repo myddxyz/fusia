@@ -1528,479 +1528,292 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
     </div>
 
     <script>
-        class Mathia {
-            constructor() {
-                this.currentMode = 'chat';
-                this.currentProblem = null;
-                this.hintIndex = 0;
-                this.userProfile = {
-                    level: 1,
-                    xp: 0,
-                    badges: [],
-                    problemsSolved: 0,
-                    streak: 0
-                };
-                
-                this.init();
+        // Variables globales
+        let currentMode = 'chat';
+        let currentProblem = null;
+        let userProfile = {
+            level: 1,
+            xp: 0,
+            badges: [],
+            problemsSolved: 0,
+            streak: 0
+        };
+
+        // Fonction pour changer de mode
+        function switchMode(mode) {
+            console.log('Switching to mode:', mode);
+            
+            // Update buttons
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.getAttribute('data-mode') === mode) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            // Update sections
+            const chatSection = document.getElementById('chatSection');
+            const practiceSection = document.getElementById('practiceSection');
+            
+            if (mode === 'chat') {
+                chatSection.style.display = 'flex';
+                practiceSection.style.display = 'none';
+            } else {
+                chatSection.style.display = 'none';
+                practiceSection.style.display = 'block';
             }
             
-            init() {
-                this.setupEventListeners();
-                this.loadUserProfile();
-                this.loadNewProblem();
-            }
+            currentMode = mode;
             
-            setupEventListeners() {
-                // Mode switching
-                document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        console.log('Mode button clicked:', e.target.dataset.mode);
-                        this.switchMode(e.target.dataset.mode);
-                    });
-                });
-                
-                // Chat functionality
-                const sendBtn = document.getElementById('sendBtn');
-                if (sendBtn) {
-                    sendBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        console.log('Send button clicked');
-                        this.sendMessage();
-                    });
-                }
-                
-                const messageInput = document.getElementById('messageInput');
-                if (messageInput) {
-                    messageInput.addEventListener('keypress', (e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            this.sendMessage();
-                        }
-                    });
-                }
-                
-                // Example cards
-                document.querySelectorAll('.example-card').forEach(card => {
-                    card.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        const example = card.dataset.example;
-                        console.log('Example clicked:', example);
-                        const input = document.getElementById('messageInput');
-                        if (input) {
-                            input.value = example;
-                            this.sendMessage();
-                        }
-                    });
-                });
-                
-                // Practice functionality
-                const newProblemBtn = document.getElementById('newProblemBtn');
-                if (newProblemBtn) {
-                    newProblemBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        console.log('New problem button clicked');
-                        this.loadNewProblem();
-                    });
-                }
-                
-                const submitBtn = document.getElementById('submitBtn');
-                if (submitBtn) {
-                    submitBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        console.log('Submit button clicked');
-                        this.submitAnswer();
-                    });
-                }
-                
-                const hintBtn = document.getElementById('hintBtn');
-                if (hintBtn) {
-                    hintBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        console.log('Hint button clicked');
-                        this.showHint();
-                    });
-                }
-                
-                const answerInput = document.getElementById('answerInput');
-                if (answerInput) {
-                    answerInput.addEventListener('keypress', (e) => {
-                        if (e.key === 'Enter') {
-                            e.preventDefault();
-                            this.submitAnswer();
-                        }
-                    });
-                }
-            }
-            
-            switchMode(mode) {
-                console.log('Switching to mode:', mode);
-                
-                // Update buttons
-                document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
-                    btn.classList.remove('active');
-                    if (btn.dataset.mode === mode) {
-                        btn.classList.add('active');
-                    }
-                });
-                
-                // Update sections
-                const chatSection = document.getElementById('chatSection');
-                const practiceSection = document.getElementById('practiceSection');
-                
-                if (chatSection && practiceSection) {
-                    if (mode === 'chat') {
-                        chatSection.style.display = 'flex';
-                        practiceSection.classList.remove('active');
-                    } else if (mode === 'practice') {
-                        chatSection.style.display = 'none';
-                        practiceSection.classList.add('active');
-                    }
-                }
-                
-                this.currentMode = mode;
-                
-                if (mode === 'practice' && !this.currentProblem) {
-                    this.loadNewProblem();
-                }
-                
-                console.log('Mode switched to:', this.currentMode);
-            }
-            
-            async sendMessage() {
-                const input = document.getElementById('messageInput');
-                if (!input) {
-                    console.error('Message input not found');
-                    return;
-                }
-                
-                const message = input.value.trim();
-                console.log('Sending message:', message);
-                
-                if (!message) {
-                    this.showNotification('Veuillez entrer un message', 'warning');
-                    return;
-                }
-                
-                // Add user message
-                this.addMessage('user', message);
-                input.value = '';
-                input.style.height = 'auto';
-                
-                // Show loading
-                const loadingId = this.addMessage('assistant', '<span class="loading"></span> Analyse en cours...');
-                
-                try {
-                    console.log('Making API call...');
-                    const response = await fetch('/api/chat', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            message: message,
-                            show_steps: true
-                        })
-                    });
-                    
-                    console.log('Response received:', response.status);
-                    const data = await response.json();
-                    console.log('Response data:', data);
-                    
-                    // Remove loading message
-                    const loadingElement = document.getElementById(loadingId);
-                    if (loadingElement) {
-                        loadingElement.remove();
-                    }
-                    
-                    if (data.success) {
-                        // Add AI response
-                        let responseContent = data.response || 'Réponse vide reçue';
-                        
-                        // Add solution steps if available
-                        if (data.solution_steps && data.solution_steps.length > 0) {
-                            responseContent += '<div class="message-steps">';
-                            data.solution_steps.forEach((step, index) => {
-                                responseContent += `<div class="step"><span class="step-number">${index + 1}</span>${step}</div>`;
-                            });
-                            responseContent += '</div>';
-                        }
-                        
-                        this.addMessage('assistant', responseContent);
-                        
-                        // Add graph if available
-                        if (data.graph) {
-                            this.addGraph(data.graph);
-                        }
-                        
-                        // Update profile with new badges/XP
-                        if (data.new_badges && data.new_badges.length > 0) {
-                            this.showBadgeNotifications(data.new_badges);
-                        }
-                        
-                        this.updateProfile(data);
-                        
-                    } else {
-                        this.addMessage('assistant', `Erreur: ${data.error || 'Erreur inconnue'}`);
-                        this.showNotification('Erreur lors du traitement', 'error');
-                    }
-                    
-                } catch (error) {
-                    console.error('Chat error:', error);
-                    const loadingElement = document.getElementById(loadingId);
-                    if (loadingElement) {
-                        loadingElement.remove();
-                    }
-                    this.addMessage('assistant', 'Désolé, une erreur de connexion s\'est produite. Veuillez réessayer.');
-                    this.showNotification('Erreur de connexion', 'error');
-                }
-            }
-            
-            addMessage(type, content) {
-                const messages = document.getElementById('messages');
-                const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
-                
-                const messageDiv = document.createElement('div');
-                messageDiv.id = messageId;
-                messageDiv.className = `message ${type}`;
-                messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
-                
-                messages.appendChild(messageDiv);
-                messages.scrollTop = messages.scrollHeight;
-                
-                return messageId;
-            }
-            
-            addGraph(graphData) {
-                const messages = document.getElementById('messages');
-                const graphDiv = document.createElement('div');
-                graphDiv.className = 'graph-container';
-                graphDiv.innerHTML = `
-                    <h4 style="color: var(--accent); margin-bottom: 15px;">📊 Visualisation Graphique</h4>
-                    <img src="data:image/png;base64,${graphData}" alt="Graphique mathématique">
-                `;
-                messages.appendChild(graphDiv);
-                messages.scrollTop = messages.scrollHeight;
-            }
-            
-            async loadNewProblem() {
-                try {
-                    const response = await fetch('/api/practice');
-                    const problem = await response.json();
-                    
-                    this.currentProblem = problem;
-                    this.hintIndex = 0;
-                    
-                    document.getElementById('problemTitle').textContent = problem.title;
-                    document.getElementById('problemDescription').textContent = problem.description;
-                    
-                    // Update difficulty stars
-                    const stars = '★'.repeat(problem.difficulty) + '☆'.repeat(5 - problem.difficulty);
-                    document.getElementById('problemDifficulty').textContent = stars;
-                    
-                    // Reset hint section
-                    document.getElementById('hintSection').style.display = problem.hints && problem.hints.length > 0 ? 'block' : 'none';
-                    document.getElementById('hintContent').style.display = 'none';
-                    document.getElementById('hintBtn').textContent = '💡 Voir un indice';
-                    
-                    // Reset answer input
-                    document.getElementById('answerInput').value = '';
-                    document.getElementById('resultCard').style.display = 'none';
-                    
-                } catch (error) {
-                    console.error('Problem loading error:', error);
-                    this.showNotification('Erreur lors du chargement du problème', 'error');
-                }
-            }
-            
-            showHint() {
-                if (!this.currentProblem || !this.currentProblem.hints) return;
-                
-                const hintContent = document.getElementById('hintContent');
-                const hintBtn = document.getElementById('hintBtn');
-                
-                if (this.hintIndex < this.currentProblem.hints.length) {
-                    hintContent.textContent = this.currentProblem.hints[this.hintIndex];
-                    hintContent.style.display = 'block';
-                    this.hintIndex++;
-                    
-                    if (this.hintIndex >= this.currentProblem.hints.length) {
-                        hintBtn.textContent = '💡 Tous les indices utilisés';
-                        hintBtn.disabled = true;
-                    } else {
-                        hintBtn.textContent = `💡 Indice suivant (${this.hintIndex + 1}/${this.currentProblem.hints.length})`;
-                    }
-                }
-            }
-            
-            async submitAnswer() {
-                if (!this.currentProblem) return;
-                
-                const answer = document.getElementById('answerInput').value.trim();
-                if (!answer) {
-                    this.showNotification('Veuillez entrer une réponse', 'warning');
-                    return;
-                }
-                
-                try {
-                    const response = await fetch('/api/submit', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            problem_id: this.currentProblem.id,
-                            answer: answer
-                        })
-                    });
-                    
-                    const result = await response.json();
-                    
-                    this.showResult(result);
-                    
-                    if (result.correct) {
-                        this.userProfile.problemsSolved++;
-                        this.userProfile.xp += result.xp_earned || 0;
-                        this.userProfile.streak++;
-                        
-                        this.showNotification(`Correct ! +${result.xp_earned} XP`, 'success');
-                        
-                        if (result.level_up) {
-                            this.userProfile.level++;
-                            this.showNotification(`🎉 Niveau ${this.userProfile.level} atteint !`, 'success');
-                        }
-                        
-                        if (result.new_badges && result.new_badges.length > 0) {
-                            this.showBadgeNotifications(result.new_badges);
-                        }
-                    } else {
-                        this.userProfile.streak = 0;
-                        this.showNotification('Pas tout à fait... Regardez la solution !', 'error');
-                    }
-                    
-                    this.updateProfileDisplay();
-                    
-                } catch (error) {
-                    console.error('Submit error:', error);
-                    this.showNotification('Erreur lors de la vérification', 'error');
-                }
-            }
-            
-            showResult(result) {
-                const resultCard = document.getElementById('resultCard');
-                const resultContent = document.getElementById('resultContent');
-                
-                resultCard.className = `result-card ${result.correct ? 'correct' : 'incorrect'}`;
-                resultCard.style.display = 'block';
-                
-                let content = `
-                    <h4>${result.correct ? '✅ Correct !' : '❌ Incorrect'}</h4>
-                    <p><strong>Réponse attendue:</strong> ${result.expected_answer}</p>
-                `;
-                
-                if (result.solution_steps) {
-                    content += '<div style="margin-top: 15px;"><strong>Solution détaillée:</strong>';
-                    result.solution_steps.forEach((step, index) => {
-                        content += `<div style="margin: 5px 0; padding-left: 20px;">${index + 1}. ${step}</div>`;
-                    });
-                    content += '</div>';
-                }
-                
-                if (result.correct && result.xp_earned) {
-                    content += `<div style="margin-top: 15px; color: var(--success);"><strong>+${result.xp_earned} XP gagnés !</strong></div>`;
-                }
-                
-                resultContent.innerHTML = content;
-            }
-            
-            async loadUserProfile() {
-                try {
-                    const response = await fetch('/api/profile');
-                    const profile = await response.json();
-                    
-                    this.userProfile = { ...this.userProfile, ...profile };
-                    this.updateProfileDisplay();
-                    
-                } catch (error) {
-                    console.error('Profile loading error:', error);
-                }
-            }
-            
-            updateProfile(data) {
-                if (data.user_level) this.userProfile.level = data.user_level;
-                if (data.user_xp) this.userProfile.xp = data.user_xp;
-                if (data.new_badges) {
-                    data.new_badges.forEach(badge => {
-                        if (!this.userProfile.badges.includes(badge.name)) {
-                            this.userProfile.badges.push(badge.name);
-                        }
-                    });
-                }
-                
-                this.updateProfileDisplay();
-            }
-            
-            updateProfileDisplay() {
-                // Update level
-                document.getElementById('userLevel').textContent = `Niveau ${this.userProfile.level}`;
-                
-                // Update XP bar
-                const nextLevelXP = this.userProfile.level === 1 ? 100 : 100 + (this.userProfile.level - 1) * 50;
-                const currentLevelXP = this.userProfile.level === 1 ? 0 : 100 + (this.userProfile.level - 2) * 50;
-                const progressXP = this.userProfile.xp - currentLevelXP;
-                const neededXP = nextLevelXP - currentLevelXP;
-                const percentage = Math.min((progressXP / neededXP) * 100, 100);
-                
-                document.getElementById('xpFill').style.width = `${percentage}%`;
-                document.getElementById('xpText').textContent = `${this.userProfile.xp} / ${nextLevelXP} XP`;
-                
-                // Update stats
-                document.getElementById('problemsSolved').textContent = this.userProfile.problemsSolved;
-                document.getElementById('currentStreak').textContent = this.userProfile.streak;
-                
-                // Update badges
-                const badgeElements = document.querySelectorAll('.badge');
-                const badgeNames = ['Premier Pas', 'Résolveur', 'Expert', 'Visualisateur', 'Série', 'Polyvalent'];
-                
-                badgeElements.forEach((badge, index) => {
-                    const badgeName = badgeNames[index];
-                    if (this.userProfile.badges.includes(badgeName)) {
-                        badge.classList.add('earned');
-                    }
-                });
-            }
-            
-            showBadgeNotifications(badges) {
-                badges.forEach((badge, index) => {
-                    setTimeout(() => {
-                        this.showNotification(`🏆 Badge débloqué: ${badge.name}!`, 'success');
-                    }, index * 1000);
-                });
-            }
-            
-            showNotification(message, type = 'info') {
-                // Remove existing notifications
-                document.querySelectorAll('.notification').forEach(n => n.remove());
-                
-                const notification = document.createElement('div');
-                notification.className = `notification ${type}`;
-                notification.textContent = message;
-                
-                document.body.appendChild(notification);
-                
-                // Show notification
-                setTimeout(() => notification.classList.add('show'), 100);
-                
-                // Hide notification after 4 seconds
-                setTimeout(() => {
-                    notification.classList.remove('show');
-                    setTimeout(() => notification.remove(), 300);
-                }, 4000);
+            if (mode === 'practice' && !currentProblem) {
+                loadNewProblem();
             }
         }
-        
+
+        // Fonction pour envoyer un message
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            console.log('Sending message:', message);
+            
+            if (!message) {
+                showNotification('Veuillez entrer un message', 'warning');
+                return;
+            }
+            
+            // Add user message
+            addMessage('user', message);
+            input.value = '';
+            
+            // Show loading
+            const loadingId = addMessage('assistant', '<span class="loading"></span> Analyse en cours...');
+            
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        show_steps: true
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('Response:', data);
+                
+                // Remove loading message
+                const loadingElement = document.getElementById(loadingId);
+                if (loadingElement) {
+                    loadingElement.remove();
+                }
+                
+                if (data.success) {
+                    let responseContent = data.response || 'Réponse vide reçue';
+                    
+                    // Add solution steps
+                    if (data.solution_steps && data.solution_steps.length > 0) {
+                        responseContent += '<div class="message-steps">';
+                        data.solution_steps.forEach((step, index) => {
+                            responseContent += `<div class="step"><span class="step-number">${index + 1}</span>${step}</div>`;
+                        });
+                        responseContent += '</div>';
+                    }
+                    
+                    addMessage('assistant', responseContent);
+                    
+                    // Add graph if available
+                    if (data.graph) {
+                        addGraph(data.graph);
+                    }
+                    
+                    showNotification('Réponse générée !', 'success');
+                    
+                } else {
+                    addMessage('assistant', `Erreur: ${data.error || 'Erreur inconnue'}`);
+                    showNotification('Erreur lors du traitement', 'error');
+                }
+                
+            } catch (error) {
+                console.error('Chat error:', error);
+                const loadingElement = document.getElementById(loadingId);
+                if (loadingElement) {
+                    loadingElement.remove();
+                }
+                addMessage('assistant', 'Désolé, une erreur de connexion s\'est produite.');
+                showNotification('Erreur de connexion', 'error');
+            }
+        }
+
+        // Fonction pour ajouter un message
+        function addMessage(type, content) {
+            const messages = document.getElementById('messages');
+            const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.id = messageId;
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
+            
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+            
+            return messageId;
+        }
+
+        // Fonction pour ajouter un graphique
+        function addGraph(graphData) {
+            const messages = document.getElementById('messages');
+            const graphDiv = document.createElement('div');
+            graphDiv.className = 'graph-container';
+            graphDiv.innerHTML = `
+                <h4 style="color: var(--accent); margin-bottom: 15px;">📊 Visualisation Graphique</h4>
+                <img src="data:image/png;base64,${graphData}" alt="Graphique mathématique" style="max-width: 100%; border-radius: 10px;">
+            `;
+            messages.appendChild(graphDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        // Fonction pour charger un nouveau problème
+        async function loadNewProblem() {
+            try {
+                const response = await fetch('/api/practice');
+                const problem = await response.json();
+                
+                currentProblem = problem;
+                
+                document.getElementById('problemTitle').textContent = problem.title || 'Nouveau problème';
+                document.getElementById('problemDescription').textContent = problem.description || 'Description du problème...';
+                
+                // Update difficulty stars
+                const stars = '★'.repeat(problem.difficulty || 1) + '☆'.repeat(5 - (problem.difficulty || 1));
+                document.getElementById('problemDifficulty').textContent = stars;
+                
+                // Reset
+                document.getElementById('answerInput').value = '';
+                document.getElementById('resultCard').style.display = 'none';
+                
+                showNotification('Nouveau problème chargé !', 'success');
+                
+            } catch (error) {
+                console.error('Problem loading error:', error);
+                showNotification('Erreur lors du chargement du problème', 'error');
+            }
+        }
+
+        // Fonction pour soumettre une réponse
+        async function submitAnswer() {
+            if (!currentProblem) {
+                showNotification('Aucun problème chargé', 'warning');
+                return;
+            }
+            
+            const answer = document.getElementById('answerInput').value.trim();
+            if (!answer) {
+                showNotification('Veuillez entrer une réponse', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        problem_id: currentProblem.id,
+                        answer: answer
+                    })
+                });
+                
+                const result = await response.json();
+                showResult(result);
+                
+                if (result.correct) {
+                    showNotification(`Correct ! +${result.xp_earned || 10} XP`, 'success');
+                    userProfile.problemsSolved++;
+                    updateProfileDisplay();
+                } else {
+                    showNotification('Pas tout à fait... Regardez la solution !', 'error');
+                }
+                
+            } catch (error) {
+                console.error('Submit error:', error);
+                showNotification('Erreur lors de la vérification', 'error');
+            }
+        }
+
+        // Fonction pour afficher le résultat
+        function showResult(result) {
+            const resultCard = document.getElementById('resultCard');
+            const resultContent = document.getElementById('resultContent');
+            
+            resultCard.className = `result-card ${result.correct ? 'correct' : 'incorrect'}`;
+            resultCard.style.display = 'block';
+            
+            let content = `
+                <h4>${result.correct ? '✅ Correct !' : '❌ Incorrect'}</h4>
+                <p><strong>Réponse attendue:</strong> ${result.expected_answer || 'Non disponible'}</p>
+            `;
+            
+            if (result.solution_steps) {
+                content += '<div style="margin-top: 15px;"><strong>Solution détaillée:</strong>';
+                result.solution_steps.forEach((step, index) => {
+                    content += `<div style="margin: 5px 0; padding-left: 20px;">${index + 1}. ${step}</div>`;
+                });
+                content += '</div>';
+            }
+            
+            resultContent.innerHTML = content;
+        }
+
+        // Fonction pour utiliser un exemple
+        function useExample(example) {
+            document.getElementById('messageInput').value = example;
+            sendMessage();
+        }
+
+        // Fonction pour mettre à jour le profil
+        function updateProfileDisplay() {
+            document.getElementById('problemsSolved').textContent = userProfile.problemsSolved;
+            document.getElementById('currentStreak').textContent = userProfile.streak;
+            
+            // Update XP bar
+            const nextLevelXP = userProfile.level === 1 ? 100 : 100 + (userProfile.level - 1) * 50;
+            const currentLevelXP = userProfile.level === 1 ? 0 : 100 + (userProfile.level - 2) * 50;
+            const progressXP = userProfile.xp - currentLevelXP;
+            const neededXP = nextLevelXP - currentLevelXP;
+            const percentage = Math.min((progressXP / neededXP) * 100, 100);
+            
+            document.getElementById('xpFill').style.width = `${percentage}%`;
+            document.getElementById('xpText').textContent = `${userProfile.xp} / ${nextLevelXP} XP`;
+        }
+
+        // Fonction pour afficher les notifications
+        function showNotification(message, type = 'info') {
+            // Remove existing notifications
+            document.querySelectorAll('.notification').forEach(n => n.remove());
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            // Show notification
+            setTimeout(() => notification.classList.add('show'), 100);
+            
+            // Hide notification after 3 seconds
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
         // Initialize Mathia when page loads
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', function() {
             console.log('DOM Content Loaded - Initializing Mathia');
             
             // Wait a bit for all elements to be ready
@@ -2012,6 +1825,50 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     console.error('Failed to initialize Mathia:', error);
                     
                     // Fallback: basic button functionality
+                    const sendBtn = document.getElementById('sendBtn');
+                    if (sendBtn) {
+                        sendBtn.addEventListener('click', () => {
+                            console.log('Fallback send button clicked');
+                            alert('Mathia est en cours de chargement...');
+                        });
+                    }
+                    
+                    // Add basic mode switching
+                    document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            console.log('Fallback mode button clicked:', e.target.dataset.mode);
+                            
+                            // Basic mode switching
+                            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                            e.target.classList.add('active');
+                            
+                            const chatSection = document.getElementById('chatSection');
+                            const practiceSection = document.getElementById('practiceSection');
+                            
+                            if (e.target.dataset.mode === 'chat') {
+                                chatSection.style.display = 'flex';
+                                practiceSection.classList.remove('active');
+                            } else {
+                                chatSection.style.display = 'none';
+                                practiceSection.classList.add('active');
+                            }
+                        });
+                    });
+                }
+            }, 100);
+        });
+        
+        // Auto-resize textarea
+        document.addEventListener('DOMContentLoaded', function() {
+            const messageInput = document.getElementById('messageInput');
+            if (messageInput) {
+                messageInput.addEventListener('input', function() {
+                    this.style.height = 'auto';
+                    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+                });
+            }
+        });
+    </script> Fallback: basic button functionality
                     const sendBtn = document.getElementById('sendBtn');
                     if (sendBtn) {
                         sendBtn.addEventListener('click', () => {
