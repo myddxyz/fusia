@@ -1448,8 +1448,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             
             <!-- Sélecteur de mode -->
             <div class="mode-selector">
-                <button class="mode-btn active" data-mode="chat">💬 Chat Libre</button>
-                <button class="mode-btn" data-mode="practice">🎯 Entraînement</button>
+                <button class="mode-btn active" onclick="switchMode('chat')">💬 Chat Libre</button>
+                <button class="mode-btn" onclick="switchMode('practice')">🎯 Entraînement</button>
             </div>
             
             <!-- Section Chat -->
@@ -1463,19 +1463,19 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     
                     <!-- Exemples interactifs -->
                     <div class="examples-grid">
-                        <div class="example-card" data-example="Résous l'équation 2x + 5 = 13">
+                        <div class="example-card" onclick="useExample('Résous l\'équation 2x + 5 = 13')">
                             <div class="example-title">Équation Simple</div>
                             <div class="example-desc">2x + 5 = 13</div>
                         </div>
-                        <div class="example-card" data-example="Trace la fonction f(x) = x² - 4x + 3">
+                        <div class="example-card" onclick="useExample('Trace la fonction f(x) = x² - 4x + 3')">
                             <div class="example-title">Fonction Quadratique</div>
                             <div class="example-desc">f(x) = x² - 4x + 3</div>
                         </div>
-                        <div class="example-card" data-example="Calcule la dérivée de x³ + 2x² - 5x">
+                        <div class="example-card" onclick="useExample('Calcule la dérivée de x³ + 2x² - 5x')">
                             <div class="example-title">Dérivée</div>
                             <div class="example-desc">d/dx(x³ + 2x² - 5x)</div>
                         </div>
-                        <div class="example-card" data-example="Analyse les limites de ln(x) quand x tend vers 0">
+                        <div class="example-card" onclick="useExample('Analyse les limites de ln(x) quand x tend vers 0')">
                             <div class="example-title">Limites</div>
                             <div class="example-desc">lim(x→0) ln(x)</div>
                         </div>
@@ -1486,9 +1486,9 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     <div class="input-group">
                         <textarea id="messageInput" class="input-field" 
                                 placeholder="Posez votre question mathématique... (ex: 'Résous 3x + 7 = 22' ou 'Trace f(x) = sin(x)')"
-                                rows="3"></textarea>
+                                rows="3" onkeypress="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
                     </div>
-                    <button id="sendBtn" class="send-btn">Envoyer</button>
+                    <button id="sendBtn" class="send-btn" onclick="sendMessage()">Envoyer</button>
                 </div>
             </div>
             
@@ -1501,21 +1501,22 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                                 <h3 class="problem-title" id="problemTitle">Chargement...</h3>
                                 <div class="difficulty-stars" id="problemDifficulty"></div>
                             </div>
-                            <button class="mode-btn" id="newProblemBtn">Nouveau Problème</button>
+                            <button class="mode-btn" onclick="loadNewProblem()">Nouveau Problème</button>
                         </div>
                         <div class="problem-description" id="problemDescription">
                             Chargement du problème...
                         </div>
                         
                         <div class="hint-section" id="hintSection" style="display: none;">
-                            <button class="hint-btn" id="hintBtn">💡 Voir un indice</button>
+                            <button class="hint-btn" onclick="showHint()">💡 Voir un indice</button>
                             <div class="hint-content" id="hintContent"></div>
                         </div>
                         
                         <div class="solution-input">
                             <input type="text" id="answerInput" class="input-field" 
-                                   placeholder="Votre réponse..." style="min-height: auto;">
-                            <button id="submitBtn" class="submit-btn">Vérifier</button>
+                                   placeholder="Votre réponse..." style="min-height: auto;"
+                                   onkeypress="if(event.key==='Enter'){submitAnswer();}">
+                            <button onclick="submitAnswer()" class="submit-btn">Vérifier</button>
                         </div>
                         
                         <div class="result-card" id="resultCard">
@@ -1528,6 +1529,9 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
     </div>
 
     <script>
+        // Test immédiat pour vérifier que le JavaScript s'exécute
+        console.log('🚀 Mathia JavaScript chargé');
+        
         // Variables globales
         let currentMode = 'chat';
         let currentProblem = null;
@@ -1539,34 +1543,58 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             streak: 0
         };
 
+        // FONCTION TEST - pour vérifier que tout fonctionne
+        function testFunction() {
+            console.log('✅ Test function appelée');
+            showNotification('Test réussi ! JavaScript fonctionne', 'success');
+            return true;
+        }
+
         // Fonction pour changer de mode
         function switchMode(mode) {
-            console.log('Switching to mode:', mode);
+            console.log('🔄 Changing mode to:', mode);
             
-            // Update buttons
-            document.querySelectorAll('.mode-btn').forEach(btn => {
-                btn.classList.remove('active');
-                if (btn.getAttribute('data-mode') === mode) {
-                    btn.classList.add('active');
+            try {
+                // Update buttons
+                document.querySelectorAll('.mode-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                
+                // Find and activate the clicked button
+                const buttons = document.querySelectorAll('.mode-btn');
+                buttons.forEach(btn => {
+                    if (btn.textContent.includes('Chat') && mode === 'chat') {
+                        btn.classList.add('active');
+                    } else if (btn.textContent.includes('Entraînement') && mode === 'practice') {
+                        btn.classList.add('active');
+                    }
+                });
+                
+                // Update sections
+                const chatSection = document.getElementById('chatSection');
+                const practiceSection = document.getElementById('practiceSection');
+                
+                if (mode === 'chat') {
+                    chatSection.style.display = 'flex';
+                    practiceSection.style.display = 'none';
+                    showNotification('Mode Chat activé', 'success');
+                } else {
+                    chatSection.style.display = 'none';
+                    practiceSection.style.display = 'block';
+                    showNotification('Mode Entraînement activé', 'success');
+                    
+                    // Load a problem if none exists
+                    if (!currentProblem) {
+                        loadNewProblem();
+                    }
                 }
-            });
-            
-            // Update sections
-            const chatSection = document.getElementById('chatSection');
-            const practiceSection = document.getElementById('practiceSection');
-            
-            if (mode === 'chat') {
-                chatSection.style.display = 'flex';
-                practiceSection.style.display = 'none';
-            } else {
-                chatSection.style.display = 'none';
-                practiceSection.style.display = 'block';
-            }
-            
-            currentMode = mode;
-            
-            if (mode === 'practice' && !currentProblem) {
-                loadNewProblem();
+                
+                currentMode = mode;
+                console.log('✅ Mode changed to:', currentMode);
+                
+            } catch (error) {
+                console.error('❌ Error in switchMode:', error);
+                showNotification('Erreur lors du changement de mode', 'error');
             }
         }
 
