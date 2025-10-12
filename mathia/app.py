@@ -28,7 +28,6 @@ class MathiaExplorer:
             'cache_hits': 0,
             'concepts_explored': 0
         }
-        self.current_language = 'fr'
         
         logger.info("Mathia Explorer initialized with Mistral AI")
     
@@ -222,6 +221,7 @@ Réponse:"""
                 'error': f'Erreur lors du traitement: {str(e)}'
             }
 
+# Instance globale
 mathia = MathiaExplorer()
 
 @app.route('/')
@@ -229,25 +229,38 @@ def index():
     """Interface principale de Mathia"""
     return render_template_string(MATHIA_TEMPLATE)
 
-@app.route('/api/explore', methods=['POST'])
+@app.route('/api/explore', methods=['POST', 'OPTIONS'])
 def explore():
     """API d'exploration de concepts"""
+    
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
+    
     try:
         logger.info("🚀 REQUÊTE /api/explore")
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Method: {request.method}")
         
         if not request.is_json:
+            logger.error(f"Content-Type incorrect: {request.content_type}")
             return jsonify({'success': False, 'error': 'Content-Type doit être application/json'}), 400
         
         data = request.get_json()
+        logger.info(f"Data reçue: {data}")
         
         if not data:
             return jsonify({'success': False, 'error': 'Données JSON requises'}), 400
         
-        concept = data.get('concept')
+        concept = data.get('concept', '').strip()
         language = data.get('language', 'fr')
         detail_level = data.get('detail_level', 'moyen')
         
-        if not concept or not concept.strip():
+        if not concept:
             return jsonify({'success': False, 'error': 'Concept requis'}), 400
         
         logger.info(f"🚀 EXPLORATION: '{concept}' ({language}, {detail_level})")
@@ -264,7 +277,7 @@ def explore():
         
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"💥 ERREUR ENDPOINT: {error_msg}")
+        logger.error(f"💥 ERREUR ENDPOINT: {error_msg}", exc_info=True)
         return jsonify({'success': False, 'error': f'Erreur serveur: {error_msg}'}), 500
 
 @app.route('/api/stats', methods=['GET'])
@@ -273,6 +286,7 @@ def get_stats():
     try:
         return jsonify(mathia.stats), 200
     except Exception as e:
+        logger.error(f"Erreur stats: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
@@ -281,9 +295,11 @@ def health():
     return jsonify({
         'status': 'OK',
         'service': 'Mathia Explorer',
-        'version': '3.0'
+        'version': '3.0',
+        'routes': [rule.rule for rule in app.url_map.iter_rules()]
     })
 
+# Template HTML
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1239,6 +1255,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 updateProgress(20);
                 updateStatus(translations[currentLanguage].analyzing);
                 
+                console.log('Sending request to /api/explore:', requestData);
+                
                 const response = await fetch('/api/explore', {
                     method: 'POST',
                     headers: {
@@ -1251,6 +1269,9 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
 
+                console.log('Response status:', response.status);
+                console.log('Response content-type:', response.headers.get('content-type'));
+
                 if (!response.ok) {
                     let errorMessage = `HTTP Error ${response.status}`;
                     try {
@@ -1260,6 +1281,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                             errorMessage = errorData.error || errorMessage;
                         } else {
                             const errorText = await response.text();
+                            console.error('Server returned:', errorText);
                             errorMessage = errorText.substring(0, 200) || errorMessage;
                         }
                     } catch (e) {
@@ -1269,6 +1291,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 }
 
                 const data = await response.json();
+                console.log('Received data:', data);
 
                 if (!data.success) {
                     throw new Error(data.error || 'Unknown error');
@@ -1415,6 +1438,11 @@ if __name__ == '__main__':
         print("   • Support multilingue (FR/EN/ES)")
         print("   • 3 niveaux de détail")
         print("   • Cache intelligent")
+        print("\n📍 Routes disponibles:")
+        print("   • GET  / - Interface principale")
+        print("   • POST /api/explore - Exploration de concepts")
+        print("   • GET  /api/stats - Statistiques")
+        print("   • GET  /health - Health check")
         
         print("\n🚀 Démarrage de Mathia...")
         
