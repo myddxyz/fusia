@@ -1251,19 +1251,12 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
 
+                const data = await response.json();
+                
                 if (!response.ok) {
-                    let errorMessage = `HTTP Error ${response.status}`;
-                    try {
-                        const errorData = await response.json();
-                        errorMessage = errorData.error || errorMessage;
-                    } catch (e) {
-                        const errorText = await response.text();
-                        errorMessage = errorText || errorMessage;
-                    }
+                    const errorMessage = data.error || `HTTP Error ${response.status}`;
                     throw new Error(errorMessage);
                 }
-
-                const data = await response.json();
 
                 if (!data.success) {
                     throw new Error(data.error || 'Unknown error');
