@@ -3,8 +3,8 @@ import os
 import json
 from mistralai import Mistral
 import logging
-from dataclasses import dataclass
-from typing import Dict, List, Optional
+import time
+import hashlib
 import re
 
 logging.basicConfig(level=logging.INFO)
@@ -12,19 +12,8 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-@dataclass
-class MathConcept:
-    """Structure pour un concept mathématique"""
-    name: str
-    definition: str
-    category: str
-    related_concepts: List[str]
-    examples: List[str]
-    difficulty: int  # 1-5
-    keywords: List[str]
-
 class MathiaExplorer:
-    """Explorateur interactif de concepts mathématiques"""
+    """Explorateur mathématique avec IA Mistral"""
     
     def __init__(self):
         self.api_keys = [
@@ -32,315 +21,209 @@ class MathiaExplorer:
             os.environ.get('MISTRAL_KEY_2', '9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF'),
             os.environ.get('MISTRAL_KEY_3', 'cvkQHVcomFFEW47G044x2p4DTyk5BIc7')
         ]
-        self.current_key = 0
-        self.concept_database = self._initialize_concepts()
-        self.exploration_history = []
+        self.current_key_index = 0
+        self.cache = {}
+        self.stats = {
+            'requests': 0,
+            'cache_hits': 0,
+            'concepts_explored': 0
+        }
+        self.current_language = 'fr'
         
-        logger.info("Mathia Explorer initialized")
+        logger.info("Mathia Explorer initialized with Mistral AI")
     
     def get_mistral_client(self):
-        """Obtient un client Mistral fonctionnel"""
-        for i in range(len(self.api_keys)):
+        """Obtient un client Mistral avec rotation des clés"""
+        key = self.api_keys[self.current_key_index % len(self.api_keys)]
+        self.current_key_index += 1
+        return Mistral(api_key=key)
+    
+    def retry_with_different_keys(self, func, *args, **kwargs):
+        """Retry avec toutes les clés API disponibles"""
+        last_exception = None
+        
+        for attempt in range(len(self.api_keys)):
             try:
-                key_index = (self.current_key + i) % len(self.api_keys)
-                client = Mistral(api_key=self.api_keys[key_index])
-                self.current_key = key_index
-                return client
+                logger.info(f"Tentative {attempt + 1} avec clé API")
+                result = func(*args, **kwargs)
+                return result
             except Exception as e:
-                logger.warning(f"Key {key_index} failed: {e}")
+                logger.warning(f"Erreur avec clé {attempt + 1}: {str(e)}")
+                last_exception = e
+                self.current_key_index += 1
+                if attempt < len(self.api_keys) - 1:
+                    time.sleep(2)
                 continue
         
-        return Mistral(api_key=self.api_keys[0])
+        raise Exception(f"Toutes les clés API ont échoué. Dernière erreur: {str(last_exception)}")
     
-    def _initialize_concepts(self):
-        """Initialise la base de concepts mathématiques"""
-        return {
-            "fonction": MathConcept(
-                name="Fonction",
-                definition="Une fonction est une relation qui associe à chaque élément d'un ensemble de départ (domaine) exactement un élément d'un ensemble d'arrivée.",
-                category="Analyse",
-                related_concepts=["dérivée", "intégrale", "limite", "continuité", "domaine"],
-                examples=["f(x) = x²", "f(x) = sin(x)", "f(x) = 2x + 3"],
-                difficulty=2,
-                keywords=["relation", "correspondance", "variable", "image", "antécédent"]
-            ),
-            "dérivée": MathConcept(
-                name="Dérivée",
-                definition="La dérivée d'une fonction mesure la vitesse à laquelle la fonction change. C'est le taux de variation instantané.",
-                category="Analyse",
-                related_concepts=["fonction", "tangente", "vitesse", "accélération", "intégrale"],
-                examples=["d/dx(x²) = 2x", "d/dx(sin(x)) = cos(x)", "d/dx(eˣ) = eˣ"],
-                difficulty=3,
-                keywords=["variation", "pente", "tangente", "instantané", "limite"]
-            ),
-            "nombre complexe": MathConcept(
-                name="Nombre Complexe",
-                definition="Un nombre complexe est un nombre de la forme a + bi où a et b sont des nombres réels et i est l'unité imaginaire (i² = -1).",
-                category="Algèbre",
-                related_concepts=["nombre réel", "plan complexe", "module", "argument", "conjugué"],
-                examples=["3 + 4i", "2i", "-1 + i", "5"],
-                difficulty=3,
-                keywords=["imaginaire", "réel", "partie", "module", "argument"]
-            ),
-            "probabilité": MathConcept(
-                name="Probabilité",
-                definition="La probabilité mesure la chance qu'un événement se produise. Elle est comprise entre 0 (impossible) et 1 (certain).",
-                category="Statistiques",
-                related_concepts=["événement", "variable aléatoire", "espérance", "variance", "loi"],
-                examples=["P(pile) = 0.5 pour une pièce", "P(dé = 6) = 1/6", "P(A ∪ B)"],
-                difficulty=2,
-                keywords=["chance", "aléatoire", "fréquence", "événement", "mesure"]
-            ),
-            "matrice": MathConcept(
-                name="Matrice",
-                definition="Une matrice est un tableau rectangulaire de nombres organisés en lignes et en colonnes.",
-                category="Algèbre Linéaire",
-                related_concepts=["déterminant", "vecteur", "système", "transformation", "inverse"],
-                examples=["[[1,2],[3,4]]", "matrice identité", "matrice nulle"],
-                difficulty=3,
-                keywords=["tableau", "lignes", "colonnes", "linéaire", "transformation"]
-            ),
-            "limite": MathConcept(
-                name="Limite",
-                definition="La limite d'une fonction en un point décrit le comportement de la fonction lorsque la variable s'approche de ce point.",
-                category="Analyse",
-                related_concepts=["fonction", "continuité", "asymptote", "infiniment petit", "dérivée"],
-                examples=["lim(x→0) sin(x)/x = 1", "lim(x→∞) 1/x = 0"],
-                difficulty=3,
-                keywords=["approche", "tendance", "infini", "comportement", "voisinage"]
-            ),
-            "intégrale": MathConcept(
-                name="Intégrale",
-                definition="L'intégrale mesure l'aire sous une courbe. C'est l'opération inverse de la dérivée.",
-                category="Analyse",
-                related_concepts=["dérivée", "aire", "primitive", "fonction", "somme"],
-                examples=["∫x² dx = x³/3 + C", "∫sin(x) dx = -cos(x) + C"],
-                difficulty=3,
-                keywords=["aire", "primitive", "accumulation", "somme", "antidérivée"]
-            ),
-            "vecteur": MathConcept(
-                name="Vecteur",
-                definition="Un vecteur est un objet mathématique caractérisé par une direction et une norme (longueur).",
-                category="Algèbre Linéaire",
-                related_concepts=["matrice", "norme", "produit scalaire", "base", "espace"],
-                examples=["(3, 4)", "(1, 0, 0)", "vecteur vitesse"],
-                difficulty=2,
-                keywords=["direction", "norme", "composante", "flèche", "espace"]
-            ),
-            "équation": MathConcept(
-                name="Équation",
-                definition="Une équation est une égalité contenant une ou plusieurs inconnues à déterminer.",
-                category="Algèbre",
-                related_concepts=["inconnue", "solution", "système", "racine", "identité"],
-                examples=["2x + 3 = 7", "x² - 5x + 6 = 0", "sin(x) = 0.5"],
-                difficulty=1,
-                keywords=["égalité", "inconnue", "résolution", "solution", "racine"]
-            ),
-            "ensemble": MathConcept(
-                name="Ensemble",
-                definition="Un ensemble est une collection d'objets mathématiques distincts, appelés éléments.",
-                category="Fondements",
-                related_concepts=["élément", "sous-ensemble", "union", "intersection", "cardinal"],
-                examples=["ℕ (nombres naturels)", "{1, 2, 3}", "ensemble vide ∅"],
-                difficulty=1,
-                keywords=["collection", "élément", "appartenance", "inclusion", "cardinal"]
-            )
+    def get_cache_key(self, concept, language, detail_level):
+        """Génère une clé de cache unique"""
+        return hashlib.md5(f"{concept.lower().strip()}_{language}_{detail_level}".encode()).hexdigest()
+    
+    def markdown_to_html(self, text):
+        """Convertit le Markdown en HTML"""
+        if not text:
+            return ""
+        
+        text = text.strip()
+        text = re.sub(r'\*\*([^*]+?)\*\*', r'<strong>\1</strong>', text)
+        text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
+        
+        paragraphs = text.split('\n\n')
+        formatted_paragraphs = []
+        
+        for para in paragraphs:
+            para = para.strip()
+            if para and not para.startswith('<'):
+                para = f'<p>{para}</p>'
+            if para:
+                formatted_paragraphs.append(para)
+        
+        return '\n'.join(formatted_paragraphs)
+    
+    def get_language_instruction(self, language):
+        """Retourne l'instruction de langue"""
+        instructions = {
+            'fr': 'Réponds en français.',
+            'en': 'Respond in English.',
+            'es': 'Responde en español.'
         }
+        return instructions.get(language, instructions['fr'])
     
-    def explore_concept(self, query: str) -> Dict:
-        """Explore un concept mathématique"""
-        try:
-            # Nettoyer la requête
-            query_clean = query.lower().strip()
+    def explore_concept_with_ai(self, concept, language='fr', detail_level='moyen'):
+        """Explore un concept mathématique avec Mistral AI"""
+        def _explore():
+            client = self.get_mistral_client()
             
-            # Recherche exacte
-            if query_clean in self.concept_database:
-                concept = self.concept_database[query_clean]
-                ai_explanation = self._get_ai_explanation(concept)
-                
-                self.exploration_history.append(query_clean)
-                
-                return {
-                    'success': True,
-                    'concept': {
-                        'name': concept.name,
-                        'definition': concept.definition,
-                        'category': concept.category,
-                        'related_concepts': concept.related_concepts,
-                        'examples': concept.examples,
-                        'difficulty': concept.difficulty,
-                        'difficulty_text': self._get_difficulty_text(concept.difficulty)
-                    },
-                    'ai_explanation': ai_explanation,
-                    'found_in_database': True
-                }
+            lang_instruction = self.get_language_instruction(language)
             
-            # Recherche par mots-clés
-            matches = self._search_by_keywords(query_clean)
-            if matches:
-                best_match = matches[0]
-                concept = self.concept_database[best_match]
-                ai_explanation = self._get_ai_explanation(concept)
-                
-                return {
-                    'success': True,
-                    'concept': {
-                        'name': concept.name,
-                        'definition': concept.definition,
-                        'category': concept.category,
-                        'related_concepts': concept.related_concepts,
-                        'examples': concept.examples,
-                        'difficulty': concept.difficulty,
-                        'difficulty_text': self._get_difficulty_text(concept.difficulty)
-                    },
-                    'ai_explanation': ai_explanation,
-                    'found_in_database': True,
-                    'search_hint': f"Concept trouvé via recherche: {best_match}"
-                }
-            
-            # Si pas dans la base, utiliser l'IA
-            ai_response = self._get_ai_concept_explanation(query)
-            
-            return {
-                'success': True,
-                'concept': {
-                    'name': query.title(),
-                    'definition': 'Concept généré par IA',
-                    'category': 'Général',
-                    'related_concepts': [],
-                    'examples': [],
-                    'difficulty': 0,
-                    'difficulty_text': 'Variable'
-                },
-                'ai_explanation': ai_response,
-                'found_in_database': False
+            # Déterminer la longueur selon le niveau de détail
+            word_counts = {
+                'court': '150-200 mots',
+                'moyen': '300-400 mots',
+                'long': '500-600 mots'
             }
+            word_count = word_counts.get(detail_level, word_counts['moyen'])
             
-        except Exception as e:
-            logger.error(f"Error exploring concept: {e}")
+            prompt = f"""Tu es Mathia, un expert en mathématiques qui vulgarise les concepts de manière claire et pédagogique.
+
+Concept à explorer: "{concept}"
+
+{lang_instruction}
+
+Fournis une explication complète et structurée du concept en {word_count}:
+
+1. DÉFINITION (2-3 phrases claires)
+   - Explique ce que c'est en termes simples
+   - Donne le contexte mathématique
+
+2. EXPLICATION DÉTAILLÉE (plusieurs paragraphes)
+   - Développe le concept en profondeur
+   - Explique les propriétés importantes
+   - Montre comment ça fonctionne
+
+3. EXEMPLES CONCRETS (3-5 exemples)
+   - Donne des exemples mathématiques précis
+   - Utilise des cas simples d'abord
+   - Montre des applications pratiques
+
+4. CONCEPTS LIÉS (liste de 4-6 concepts)
+   - Mentionne les concepts connexes importants
+   - Explique brièvement le lien
+
+5. POURQUOI C'EST IMPORTANT
+   - Applications dans la vie réelle
+   - Importance en mathématiques
+
+6. CONSEIL D'APPRENTISSAGE
+   - Un conseil pratique pour mieux comprendre
+
+Règles:
+- Écris en paragraphes naturels, PAS en format liste à puces
+- Utilise un langage accessible mais précis
+- Sois pédagogique et encourageant
+- Structure ton texte avec des transitions fluides
+- Ne mets PAS d'astérisques ou de markdown
+- Écris en texte brut
+
+Réponse:"""
+
+            try:
+                response = client.chat.complete(
+                    model="mistral-large-latest",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7,
+                    max_tokens=1200
+                )
+            except Exception as e:
+                if "429" in str(e) or "capacity" in str(e):
+                    logger.warning("Rate limit, utilisation du modèle small...")
+                    response = client.chat.complete(
+                        model="mistral-small-latest",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.7,
+                        max_tokens=1200
+                    )
+                else:
+                    raise e
+            
+            return response.choices[0].message.content.strip()
+        
+        return self.retry_with_different_keys(_explore)
+    
+    def process_concept(self, concept, language='fr', detail_level='moyen'):
+        """Traite un concept mathématique complet"""
+        logger.info(f"🔍 Exploration: '{concept}' (langue: {language}, détail: {detail_level})")
+        self.stats['requests'] += 1
+        start_time = time.time()
+        
+        if not concept or len(concept.strip()) < 2:
             return {
                 'success': False,
-                'error': str(e),
-                'message': 'Erreur lors de l\'exploration du concept'
+                'error': 'Le concept doit contenir au moins 2 caractères'
             }
-    
-    def _search_by_keywords(self, query: str) -> List[str]:
-        """Recherche par mots-clés"""
-        matches = []
-        query_words = set(query.split())
         
-        for concept_name, concept in self.concept_database.items():
-            # Recherche dans le nom
-            if query in concept_name:
-                matches.append(concept_name)
-                continue
-            
-            # Recherche dans les mots-clés
-            keyword_matches = sum(1 for keyword in concept.keywords if keyword in query or query in keyword)
-            if keyword_matches > 0:
-                matches.append(concept_name)
+        concept = concept.strip()
         
-        return matches
-    
-    def _get_difficulty_text(self, difficulty: int) -> str:
-        """Convertit le niveau de difficulté en texte"""
-        levels = {
-            1: "Débutant",
-            2: "Intermédiaire",
-            3: "Avancé",
-            4: "Expert",
-            5: "Maître"
-        }
-        return levels.get(difficulty, "Inconnu")
-    
-    def _get_ai_explanation(self, concept: MathConcept) -> str:
-        """Obtient une explication IA enrichie pour un concept"""
+        # Vérifier le cache
+        cache_key = self.get_cache_key(concept, language, detail_level)
+        if cache_key in self.cache:
+            logger.info("💾 Résultat trouvé en cache")
+            self.stats['cache_hits'] += 1
+            return self.cache[cache_key]
+        
         try:
-            client = self.get_mistral_client()
+            logger.info(f"🤖 Génération avec Mistral pour: {concept}")
+            ai_response = self.explore_concept_with_ai(concept, language, detail_level)
             
-            prompt = f"""Tu es Mathia, un expert mathématique pédagogue.
-
-Explique le concept de "{concept.name}" de manière claire et engageante.
-
-Contexte:
-- Définition: {concept.definition}
-- Catégorie: {concept.category}
-- Exemples: {', '.join(concept.examples)}
-
-Ta réponse doit:
-1. Donner une explication intuitive (2-3 phrases)
-2. Expliquer pourquoi c'est important
-3. Donner un conseil pour mieux comprendre
-4. Être accessible et motivante
-
-Reste concis (maximum 150 mots) et évite le jargon technique excessif."""
-
-            response = client.chat.complete(
-                model="mistral-large-latest",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=300
-            )
+            if not ai_response:
+                return {'success': False, 'error': 'Erreur lors de la génération de la réponse'}
             
-            return response.choices[0].message.content.strip()
+            formatted_response = self.markdown_to_html(ai_response)
+            
+            result = {
+                'success': True,
+                'concept': concept.title(),
+                'explanation': formatted_response,
+                'processing_time': round(time.time() - start_time, 2),
+                'detail_level': detail_level,
+                'language': language,
+                'source': 'mistral_ai'
+            }
+            
+            # Sauvegarder en cache
+            self.cache[cache_key] = result
+            self.stats['concepts_explored'] += 1
+            logger.info(f"✅ Traitement terminé en {result['processing_time']}s")
+            return result
             
         except Exception as e:
-            logger.error(f"AI explanation error: {e}")
-            return f"Le concept de {concept.name} est fondamental en mathématiques. {concept.definition}"
-    
-    def _get_ai_concept_explanation(self, query: str) -> str:
-        """Obtient une explication IA pour un concept non répertorié"""
-        try:
-            client = self.get_mistral_client()
-            
-            prompt = f"""Tu es Mathia, un expert mathématique pédagogue.
-
-Un utilisateur cherche à comprendre: "{query}"
-
-Fournis une explication claire et structurée:
-1. Définition simple (2-3 phrases)
-2. Exemples concrets
-3. Concepts liés
-4. Application pratique
-
-Reste pédagogique et accessible. Maximum 200 mots."""
-
-            response = client.chat.complete(
-                model="mistral-large-latest",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=400
-            )
-            
-            return response.choices[0].message.content.strip()
-            
-        except Exception as e:
-            logger.error(f"AI concept explanation error: {e}")
-            return f"Je recherche des informations sur '{query}'. Ce concept semble lié aux mathématiques, mais j'ai besoin de plus de contexte pour vous donner une explication détaillée."
-    
-    def get_all_concepts(self) -> List[Dict]:
-        """Retourne tous les concepts disponibles"""
-        return [
-            {
-                'name': concept.name,
-                'category': concept.category,
-                'difficulty': concept.difficulty,
-                'difficulty_text': self._get_difficulty_text(concept.difficulty)
+            logger.error(f"❌ Erreur: {str(e)}")
+            return {
+                'success': False,
+                'error': f'Erreur lors du traitement: {str(e)}'
             }
-            for concept in self.concept_database.values()
-        ]
-    
-    def get_concepts_by_category(self, category: str) -> List[Dict]:
-        """Retourne les concepts d'une catégorie"""
-        return [
-            {
-                'name': concept.name,
-                'category': concept.category,
-                'difficulty': concept.difficulty
-            }
-            for concept in self.concept_database.values()
-            if concept.category.lower() == category.lower()
-        ]
 
 # Instance globale
 mathia = MathiaExplorer()
@@ -354,38 +237,47 @@ def index():
 def explore():
     """API d'exploration de concepts"""
     try:
+        logger.info("🚀 REQUÊTE /api/explore")
+        
+        if not request.is_json:
+            return jsonify({'success': False, 'error': 'Content-Type doit être application/json'}), 400
+        
         data = request.get_json()
-        query = data.get('query', '').strip()
         
-        if not query:
-            return jsonify({'success': False, 'error': 'Requête vide'})
+        if not data:
+            return jsonify({'success': False, 'error': 'Données JSON requises'}), 400
         
-        result = mathia.explore_concept(query)
-        return jsonify(result)
+        concept = data.get('concept')
+        language = data.get('language', 'fr')
+        detail_level = data.get('detail_level', 'moyen')
+        
+        if not concept or not concept.strip():
+            return jsonify({'success': False, 'error': 'Concept requis'}), 400
+        
+        logger.info(f"🚀 EXPLORATION: '{concept}' ({language}, {detail_level})")
+        
+        result = mathia.process_concept(concept, language, detail_level)
+        
+        if not result.get('success'):
+            error_msg = result.get('error', 'Erreur inconnue')
+            logger.error(f"❌ ÉCHEC: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 500
+        
+        logger.info(f"✅ SUCCÈS: {result.get('concept', 'Sans titre')}")
+        return jsonify(result), 200
         
     except Exception as e:
-        logger.error(f"Explore API error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        error_msg = str(e)
+        logger.error(f"💥 ERREUR ENDPOINT: {error_msg}")
+        return jsonify({'success': False, 'error': f'Erreur serveur: {error_msg}'}), 500
 
-@app.route('/api/concepts', methods=['GET'])
-def get_concepts():
-    """Obtient la liste de tous les concepts"""
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    """Statistiques"""
     try:
-        concepts = mathia.get_all_concepts()
-        return jsonify({'success': True, 'concepts': concepts})
+        return jsonify(mathia.stats), 200
     except Exception as e:
-        logger.error(f"Concepts API error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/concepts/<category>', methods=['GET'])
-def get_concepts_by_category(category):
-    """Obtient les concepts d'une catégorie"""
-    try:
-        concepts = mathia.get_concepts_by_category(category)
-        return jsonify({'success': True, 'concepts': concepts})
-    except Exception as e:
-        logger.error(f"Category API error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
 def health():
@@ -393,622 +285,1077 @@ def health():
     return jsonify({
         'status': 'OK',
         'service': 'Mathia Explorer',
-        'version': '3.0',
-        'concepts': len(mathia.concept_database)
+        'version': '3.0'
     })
 
-# Template HTML avec design moderne
+# Template HTML avec le même design que Wiki Summarizer
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mathia - Explorateur de Concepts Mathématiques</title>
+    <title>Mathia - Explorateur Mathématique IA</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         :root {
-            --bg-primary: #e6e7ee;
-            --bg-secondary: #d1d2d9;
-            --bg-tertiary: #fbfcff;
-            --text-primary: #5a5c69;
-            --text-secondary: #8b8d97;
+            --bg-primary: #f8fafc;
+            --bg-secondary: #e2e8f0;
+            --bg-tertiary: #ffffff;
+            --text-primary: #1a202c;
+            --text-secondary: #4a5568;
             --accent: #667eea;
             --accent-secondary: #764ba2;
-            --success: #00d09c;
-            --warning: #f39c12;
-            --error: #e74c3c;
-            --shadow-light: #bebfc5;
-            --shadow-dark: #ffffff;
-            --gradient-main: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            --border: #e2e8f0;
+            --shadow: rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] {
+            --bg-primary: #1a202c;
+            --bg-secondary: #2d3748;
+            --bg-tertiary: #4a5568;
+            --text-primary: #f7fafc;
+            --text-secondary: #e2e8f0;
+            --border: #4a5568;
+            --shadow: rgba(0, 0, 0, 0.3);
         }
         
         body {
-            font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--gradient-main);
-            min-height: 100vh;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
             color: var(--text-primary);
-            padding: 20px;
-        }
-        
-        .back-link {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background: rgba(255, 255, 255, 0.1);
-            padding: 12px 24px;
-            border-radius: 25px;
-            color: white;
-            text-decoration: none;
-            font-weight: 600;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
             transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            z-index: 1000;
         }
         
-        .back-link:hover {
-            background: rgba(255, 255, 255, 0.2);
+        [data-theme="light"] body {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            color: white;
+        }
+        
+        .top-header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 15px 30px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        
+        [data-theme="dark"] .top-header {
+            background: rgba(26, 32, 44, 0.9);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .back-button {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 15px; padding: 10px 20px; 
+            color: var(--text-primary); text-decoration: none;
+            display: flex; align-items: center; gap: 10px; 
+            font-weight: 600; font-size: 0.9rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+        
+        [data-theme="light"] .back-button {
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        
+        .back-button:hover {
             transform: translateY(-2px);
+            box-shadow: 0 8px 20px var(--shadow);
+        }
+        
+        .header-controls {
+            display: flex; gap: 15px; align-items: center;
+        }
+        
+        .language-selector {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 15px; padding: 10px 15px; 
+            cursor: pointer; font-size: 0.9rem;
+            color: var(--text-primary); 
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+        
+        [data-theme="light"] .language-selector {
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        
+        .language-selector:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px var(--shadow);
+        }
+        
+        .theme-toggle {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 15px; padding: 12px; 
+            cursor: pointer; font-size: 1.2rem; 
+            transition: all 0.2s ease;
+            color: var(--text-primary);
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+        
+        [data-theme="light"] .theme-toggle {
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        
+        .theme-toggle:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px var(--shadow);
+        }
+        
+        .author-link {
+            font-size: 0.85rem; 
+            color: var(--text-primary); 
+            text-decoration: none;
+            font-weight: 500; 
+            transition: all 0.2s ease;
+            opacity: 0.8;
+        }
+        
+        [data-theme="light"] .author-link {
+            color: white;
+        }
+        
+        .author-link:hover { 
+            opacity: 1; 
+            transform: translateY(-1px); 
         }
         
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 80px 20px 40px;
+            flex: 1; padding: 100px 30px 30px; max-width: 1200px; margin: 0 auto; width: 100%;
+            display: flex; flex-direction: column; gap: 30px;
         }
         
-        .header {
-            text-align: center;
-            margin-bottom: 50px;
+        .title-section {
+            text-align: center; margin-bottom: 20px;
         }
         
-        .header h1 {
-            font-size: 3.5rem;
-            color: white;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 20px rgba(0,0,0,0.2);
+        .title {
+            font-size: 2.5rem; font-weight: 700; margin-bottom: 10px; color: white;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
         
-        .header p {
-            color: rgba(255,255,255,0.9);
-            font-size: 1.3rem;
-        }
-        
-        .search-container {
-            max-width: 700px;
-            margin: 0 auto 40px;
-        }
-        
-        .search-box {
-            position: relative;
-        }
-        
-        .search-input {
-            width: 100%;
-            padding: 20px 60px 20px 25px;
-            border: none;
-            border-radius: 50px;
-            background: var(--bg-primary);
+        [data-theme="dark"] .title {
             color: var(--text-primary);
-            font-size: 1.1rem;
-            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
-            transition: all 0.3s ease;
+            text-shadow: none;
         }
         
-        .search-input:focus {
-            outline: none;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
+        .subtitle { 
+            color: rgba(255,255,255,0.9); 
+            font-size: 1.1rem; 
         }
         
-        .search-btn {
-            position: absolute;
-            right: 10px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: var(--gradient-main);
-            border: none;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 30px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        
-        .search-btn:hover {
-            transform: translateY(-50%) scale(1.05);
-        }
-        
-        .suggestions {
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 20px;
-        }
-        
-        .suggestion-tag {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
-        }
-        
-        .suggestion-tag:hover {
-            background: rgba(255,255,255,0.3);
-            transform: translateY(-2px);
-        }
-        
-        .content-area {
-            display: grid;
-            grid-template-columns: 300px 1fr;
-            gap: 30px;
-            margin-top: 40px;
-        }
-        
-        .sidebar {
-            background: var(--bg-primary);
-            border-radius: 30px;
-            padding: 30px;
-            height: fit-content;
-            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
-        }
-        
-        .sidebar h3 {
-            color: var(--accent);
-            margin-bottom: 20px;
-            font-size: 1.3rem;
-        }
-        
-        .concept-list {
-            list-style: none;
-        }
-        
-        .concept-item {
-            padding: 12px 15px;
-            margin-bottom: 10px;
-            background: var(--bg-primary);
-            border-radius: 15px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 5px 5px 10px var(--shadow-light), -5px -5px 10px var(--shadow-dark);
-        }
-        
-        .concept-item:hover {
-            transform: translateX(5px);
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .concept-item .name {
-            font-weight: 600;
-            color: var(--text-primary);
-            display: block;
-            margin-bottom: 5px;
-        }
-        
-        .concept-item .category {
-            font-size: 0.85rem;
+        [data-theme="dark"] .subtitle {
             color: var(--text-secondary);
         }
         
-        .main-content {
+        .stats {
+            display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 10px 20px; border-radius: 15px;
+            font-size: 0.9rem; color: rgba(255,255,255,0.95);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] .stat-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            backdrop-filter: none;
+        }
+        
+        .form-section {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 25px; padding: 30px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] .form-section {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            backdrop-filter: none;
+        }
+        
+        .form-group { margin-bottom: 25px; }
+        
+        .label {
+            display: block; color: white; font-weight: 600; margin-bottom: 12px; font-size: 1rem;
+        }
+        
+        [data-theme="dark"] .label {
+            color: var(--text-primary);
+        }
+        
+        .input {
+            width: 100%; padding: 18px 24px; 
+            background: rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 20px; font-size: 1rem; color: white; outline: none; 
+            transition: all 0.3s ease;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] .input {
             background: var(--bg-primary);
-            border-radius: 30px;
-            padding: 40px;
-            min-height: 500px;
-            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            backdrop-filter: none;
         }
         
-        .welcome-message {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-secondary);
+        .input:focus {
+            background: rgba(255, 255, 255, 0.4);
+            border-color: rgba(255, 255, 255, 0.6);
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.2);
         }
         
-        .welcome-message h2 {
-            color: var(--accent);
-            font-size: 2rem;
-            margin-bottom: 20px;
-        }
-        
-        .concept-card {
-            animation: fadeIn 0.5s ease;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .concept-header {
-            border-bottom: 3px solid var(--accent);
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .concept-title {
-            font-size: 2.5rem;
-            color: var(--accent);
-            margin-bottom: 10px;
-        }
-        
-        .concept-meta {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .meta-tag {
+        [data-theme="dark"] .input:focus {
             background: var(--bg-secondary);
-            padding: 8px 16px;
-            border-radius: 15px;
-            font-size: 0.9rem;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+        
+        .input::placeholder { color: rgba(255,255,255,0.8); }
+        
+        [data-theme="dark"] .input::placeholder {
+            color: var(--text-secondary);
+        }
+        
+        .detail-selector { display: flex; gap: 15px; flex-wrap: wrap; }
+        
+        .detail-btn {
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 15px; padding: 12px 20px; font-size: 0.9rem; 
+            color: rgba(255,255,255,0.9);
+            cursor: pointer; transition: all 0.2s ease; flex: 1; min-width: 150px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] .detail-btn {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
             color: var(--text-primary);
+            backdrop-filter: none;
         }
         
-        .concept-section {
-            margin-bottom: 30px;
+        .detail-btn:hover { 
+            transform: translateY(-2px); 
+            background: rgba(255, 255, 255, 0.35);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
         }
         
-        .section-title {
-            font-size: 1.3rem;
-            color: var(--accent);
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        [data-theme="dark"] .detail-btn:hover {
+            background: var(--bg-secondary);
+            box-shadow: 0 8px 25px var(--shadow);
         }
         
-        .section-content {
-            background: var(--bg-tertiary);
-            padding: 20px;
-            border-radius: 15px;
-            line-height: 1.8;
-            border-left: 4px solid var(--accent);
+        .detail-btn.active {
+            background: rgba(255, 255, 255, 0.5); 
+            color: white; 
+            border-color: rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
         }
         
-        .examples-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-        }
-        
-        .example-card {
-            background: var(--bg-tertiary);
-            padding: 15px;
-            border-radius: 12px;
-            text-align: center;
-            font-family: "Courier New", monospace;
-            color: var(--text-primary);
-            border: 2px solid var(--bg-secondary);
-        }
-        
-        .related-concepts {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        
-        .related-tag {
-            background: var(--gradient-main);
+        [data-theme="dark"] .detail-btn.active {
+            background: var(--accent);
             color: white;
-            padding: 10px 20px;
+            border-color: var(--accent);
+        }
+        
+        .suggestions { margin-top: 15px; }
+        .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        
+        .chip {
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px; padding: 8px 16px; font-size: 0.8rem; 
+            color: rgba(255,255,255,0.95);
+            cursor: pointer; transition: all 0.2s ease;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] .chip {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            backdrop-filter: none;
+        }
+        
+        .chip:hover {
+            background: rgba(255, 255, 255, 0.4); 
+            color: white; transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+        }
+        
+        [data-theme="dark"] .chip:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            box-shadow: 0 6px 20px var(--shadow);
+        }
+        
+        .btn {
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px; padding: 18px 36px; font-size: 1.1rem; font-weight: 600;
+            color: rgba(255,255,255,0.95); cursor: pointer; transition: all 0.2s ease;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] .btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            backdrop-filter: none;
+        }
+        
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px); 
+            background: rgba(255, 255, 255, 0.35);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        [data-theme="dark"] .btn:hover:not(:disabled) {
+            background: var(--bg-secondary);
+            box-shadow: 0 8px 25px var(--shadow);
+        }
+        
+        .btn:active { transform: translateY(0); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .btn-primary {
+            background: rgba(255, 255, 255, 0.4); 
+            color: white;
+            border-color: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+        }
+        
+        [data-theme="dark"] .btn-primary {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+        
+        [data-theme="dark"] .btn-primary:hover:not(:disabled) {
+            background: #5a6fd8;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+        
+        .controls {
+            display: flex; justify-content: center; align-items: center;
+            flex-wrap: wrap; gap: 15px;
+        }
+        
+        .status {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: 20px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-weight: 500;
+            padding: 25px; display: none;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
         }
         
-        .related-tag:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        [data-theme="dark"] .status {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            backdrop-filter: none;
         }
         
-        .difficulty-indicator {
-            display: flex;
-            gap: 5px;
-            align-items: center;
+        .status.active { display: block; animation: slideDown 0.3s ease; }
+        
+        .status-text {
+            color: white; font-weight: 500; margin-bottom: 15px;
+            display: flex; align-items: center;
         }
         
-        .difficulty-star {
-            color: var(--warning);
-            font-size: 1.2rem;
+        [data-theme="dark"] .status-text {
+            color: var(--text-primary);
         }
         
-        .difficulty-star.empty {
-            color: var(--bg-secondary);
+        .progress-bar {
+            width: 100%; height: 8px; 
+            background: rgba(255, 255, 255, 0.3); border-radius: 10px; overflow: hidden;
+        }
+        
+        [data-theme="dark"] .progress-bar {
+            background: var(--bg-primary);
+        }
+        
+        .progress-fill {
+            height: 100%; border-radius: 10px; width: 0%; transition: width 0.3s ease;
+            background: linear-gradient(90deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7));
+        }
+        
+        [data-theme="dark"] .progress-fill {
+            background: linear-gradient(90deg, var(--accent), #5a6fd8);
+        }
+        
+        .result {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 25px;
+            padding: 30px; display: none; position: relative;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] .result {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            backdrop-filter: none;
+        }
+        
+        .result.active { display: block; animation: slideUp 0.5s ease; }
+        
+        .result-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        
+        .result-title {
+            color: white; font-size: 1.3rem; font-weight: 600;
+            padding-bottom: 15px; border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            flex: 1; margin-right: 20px;
+        }
+        
+        [data-theme="dark"] .result-title {
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--border);
+        }
+        
+        .copy-btn {
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px; padding: 10px; cursor: pointer; font-size: 1rem; 
+            color: rgba(255,255,255,0.9); transition: all 0.2s ease;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] .copy-btn {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            backdrop-filter: none;
+        }
+        
+        .copy-btn:hover {
+            transform: translateY(-2px); color: white; 
+            background: rgba(255, 255, 255, 0.35);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+        }
+        
+        [data-theme="dark"] .copy-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            box-shadow: 0 6px 20px var(--shadow);
+        }
+        
+        .copy-btn.success { color: #4ade80; }
+        
+        .result-meta { color: rgba(255,255,255,0.9); font-size: 0.9rem; margin-bottom: 20px; }
+        
+        [data-theme="dark"] .result-meta {
+            color: var(--text-secondary);
+        }
+        
+        .result-content { color: rgba(255,255,255,0.95); line-height: 1.7; font-size: 1rem; }
+        
+        [data-theme="dark"] .result-content {
+            color: var(--text-primary);
+        }
+        
+        .result-content p { margin-bottom: 15px; }
+        .result-content strong { color: white; font-weight: 600; }
+        
+        [data-theme="dark"] .result-content strong {
+            color: var(--text-primary);
+        }
+        
+        .result-content em { font-style: italic; color: rgba(255,255,255,0.98); }
+        
+        [data-theme="dark"] .result-content em {
+            color: var(--text-secondary);
         }
         
         .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 2px solid rgba(102, 126, 234, 0.3);
-            border-radius: 50%;
-            border-top-color: var(--accent);
-            animation: spin 1s ease-in-out infinite;
+            display: inline-block; width: 20px; height: 20px; margin-right: 10px;
+            border: 3px solid rgba(255,255,255,0.4); border-radius: 50%;
+            border-top-color: white; animation: spin 1s ease-in-out infinite;
         }
         
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        [data-theme="dark"] .loading {
+            border: 3px solid var(--text-secondary);
+            border-top-color: var(--accent);
         }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         
         .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 25px;
-            border-radius: 15px;
-            color: white;
-            font-weight: 600;
-            transform: translateX(400px);
-            transition: transform 0.3s ease;
-            z-index: 1000;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            position: fixed; top: 90px; right: 20px; padding: 15px 25px;
+            border-radius: 15px; color: white; font-weight: 500; z-index: 1000;
+            transform: translateX(400px); transition: all 0.3s ease;
+            backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.3);
         }
         
-        .notification.show {
-            transform: translateX(0);
-        }
+        .notification.show { transform: translateX(0); }
+        .notification.error { background: rgba(239, 68, 68, 0.9); }
+        .notification.success { background: rgba(34, 197, 94, 0.9); }
+        .notification.info { background: rgba(59, 130, 246, 0.9); }
         
-        .notification.success { background: var(--success); }
-        .notification.error { background: var(--error); }
-        .notification.info { background: var(--accent); }
-        
-        @media (max-width: 968px) {
-            .content-area {
-                grid-template-columns: 1fr;
-            }
-            
-            .sidebar {
-                order: 2;
-            }
-            
-            .main-content {
-                order: 1;
-            }
-            
-            .header h1 {
-                font-size: 2.5rem;
-            }
+        @media (max-width: 768px) {
+            .top-header { padding: 15px 20px; flex-direction: column; gap: 15px; }
+            .header-controls { width: 100%; justify-content: space-between; }
+            .container { padding: 140px 20px 20px; }
+            .title { font-size: 2rem; }
+            .stats { gap: 10px; }
+            .stat-item { padding: 8px 15px; font-size: 0.8rem; }
+            .detail-selector { flex-direction: column; gap: 10px; }
+            .detail-btn { min-width: auto; }
+            .controls { flex-direction: column; gap: 10px; }
+            .btn { width: 100%; }
+            .result-header { flex-direction: column; align-items: flex-start; }
+            .result-title { margin-right: 0; margin-bottom: 15px; }
         }
     </style>
 </head>
 <body>
-    <a href="/" class="back-link">← Retour au Hub</a>
-    
+    <div class="top-header">
+        <a href="/" class="back-button">
+            <span>←</span>
+            <span data-text-key="back_to_hub">Retour au Hub</span>
+        </a>
+        
+        <div class="header-controls">
+            <select class="language-selector" id="languageSelector" onchange="changeLanguage()">
+                <option value="fr">🇫🇷 Français</option>
+                <option value="en">🇺🇸 English</option>
+                <option value="es">🇪🇸 Español</option>
+            </select>
+            
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+            <a href="#" class="author-link" data-text-key="by_mydd">by Mydd</a>
+        </div>
+    </div>
+
     <div class="container">
-        <div class="header">
-            <h1>🔢 Mathia</h1>
-            <p>Explorateur Interactif de Concepts Mathématiques</p>
+        <div class="title-section">
+            <h1 class="title" data-text-key="title">🔢 Mathia</h1>
+            <p class="subtitle" data-text-key="subtitle">Explorateur de concepts mathématiques avec IA</p>
         </div>
-        
-        <div class="search-container">
-            <div class="search-box">
-                <input type="text" 
-                       id="searchInput" 
-                       class="search-input" 
-                       placeholder="Quel concept voulez-vous explorer ? (ex: fonction, probabilité...)"
-                       onkeypress="if(event.key==='Enter') exploreConcept()">
-                <button class="search-btn" onclick="exploreConcept()">Explorer</button>
-            </div>
-            
-            <div class="suggestions">
-                <span class="suggestion-tag" onclick="quickExplore('fonction')">Fonction</span>
-                <span class="suggestion-tag" onclick="quickExplore('dérivée')">Dérivée</span>
-                <span class="suggestion-tag" onclick="quickExplore('probabilité')">Probabilité</span>
-                <span class="suggestion-tag" onclick="quickExplore('vecteur')">Vecteur</span>
-                <span class="suggestion-tag" onclick="quickExplore('matrice')">Matrice</span>
-                <span class="suggestion-tag" onclick="quickExplore('nombre complexe')">Nombre Complexe</span>
-            </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-item">📊 <span id="totalRequests">0</span> <span data-text-key="requests">requêtes</span></div>
+            <div class="stat-item">💾 <span id="cacheHits">0</span> <span data-text-key="cached">en cache</span></div>
+            <div class="stat-item">🎯 <span id="conceptsExplored">0</span> <span data-text-key="concepts">concepts</span></div>
         </div>
-        
-        <div class="content-area">
-            <div class="sidebar">
-                <h3>📚 Concepts Disponibles</h3>
-                <ul class="concept-list" id="conceptList">
-                    <li class="concept-item" onclick="quickExplore('fonction')">
-                        <span class="name">Fonction</span>
-                        <span class="category">Analyse</span>
-                    </li>
-                    <li class="concept-item" onclick="quickExplore('dérivée')">
-                        <span class="name">Dérivée</span>
-                        <span class="category">Analyse</span>
-                    </li>
-                    <li class="concept-item" onclick="quickExplore('intégrale')">
-                        <span class="name">Intégrale</span>
-                        <span class="category">Analyse</span>
-                    </li>
-                    <li class="concept-item" onclick="quickExplore('limite')">
-                        <span class="name">Limite</span>
-                        <span class="category">Analyse</span>
-                    </li>
-                    <li class="concept-item" onclick="quickExplore('nombre complexe')">
-                        <span class="name">Nombre Complexe</span>
-                        <span class="category">Algèbre</span>
-                    </li>
-                    <li class="concept-item" onclick="quickExplore('matrice')">
-                        <span class="name">Matrice</span>
-                        <span class="category">Algèbre Linéaire</span>
-                    </li>
-                    <li class="concept-item" onclick="quickExplore('vecteur')">
-                        <span class="name">Vecteur</span>
-                        <span class="category">Algèbre Linéaire</span>
-                    </li>
-                    <li class="concept-item" onclick="quickExplore('probabilité')">
-                        <span class="name">Probabilité</span>
-                        <span class="category">Statistiques</span>
-                    </li>
-                    <li class="concept-item" onclick="quickExplore('équation')">
-                        <span class="name">Équation</span>
-                        <span class="category">Algèbre</span>
-                    </li>
-                    <li class="concept-item" onclick="quickExplore('ensemble')">
-                        <span class="name">Ensemble</span>
-                        <span class="category">Fondements</span>
-                    </li>
-                </ul>
-            </div>
-            
-            <div class="main-content" id="mainContent">
-                <div class="welcome-message">
-                    <h2>👋 Bienvenue dans Mathia !</h2>
-                    <p>Explorez les concepts mathématiques de manière interactive.</p>
-                    <p>Tapez un concept dans la barre de recherche ou cliquez sur un concept dans la liste.</p>
-                    <p style="margin-top: 30px; font-size: 1.5rem;">🔍</p>
+
+        <div class="form-section">
+            <form id="explorerForm" onsubmit="handleFormSubmit(event)">
+                <div class="form-group">
+                    <label class="label" for="concept">🔍 <span data-text-key="search_concept">Concept à explorer</span></label>
+                    <input type="text" id="concept" class="input" 
+                           data-placeholder-key="search_placeholder" required>
+                    
+                    <div class="suggestions">
+                        <span style="color: rgba(255,255,255,0.9); font-size: 0.9rem;">💡 <span data-text-key="popular_suggestions">Suggestions populaires:</span></span>
+                        <div class="suggestion-chips" id="suggestionChips"></div>
+                    </div>
                 </div>
+
+                <div class="form-group">
+                    <label class="label">📏 <span data-text-key="detail_level">Niveau de détail</span></label>
+                    <div class="detail-selector">
+                        <button type="button" class="detail-btn" onclick="selectDetail('court', this)">
+                            📝 <span data-text-key="short">Court</span><br><small><span data-text-key="short_desc">150-200 mots</span></small>
+                        </button>
+                        <button type="button" class="detail-btn active" onclick="selectDetail('moyen', this)">
+                            📄 <span data-text-key="medium">Moyen</span><br><small><span data-text-key="medium_desc">300-400 mots</span></small>
+                        </button>
+                        <button type="button" class="detail-btn" onclick="selectDetail('long', this)">
+                            📚 <span data-text-key="long">Détaillé</span><br><small><span data-text-key="long_desc">500-600 mots</span></small>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button type="submit" class="btn btn-primary" id="exploreBtn">
+                        ✨ <span data-text-key="explore">Explorer le concept</span>
+                    </button>
+                    <button type="button" class="btn" onclick="clearAll()">
+                        🗑️ <span data-text-key="clear">Effacer</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div id="status" class="status">
+            <div class="status-text">
+                <span class="loading"></span>
+                <span id="statusText" data-text-key="processing">Analyse en cours...</span>
             </div>
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+        </div>
+
+        <div id="result" class="result">
+            <div class="result-header">
+                <div class="result-title" id="resultTitle">📖 <span data-text-key="generated_explanation">Explication générée</span></div>
+                <button class="copy-btn" id="copyBtn" onclick="copyResult()" title="Copier">
+                    📋
+                </button>
+            </div>
+            <div class="result-meta" id="resultMeta">Source: Mistral AI • 2.3s • Moyen</div>
+            <div class="result-content" id="resultContent"></div>
         </div>
     </div>
 
     <script>
-        let currentConcept = null;
+        let isProcessing = false;
+        let currentDetail = 'moyen';
+        let currentLanguage = 'fr';
+        let currentTheme = 'light';
+        
+        const translations = {
+            fr: {
+                title: "🔢 Mathia",
+                subtitle: "Explorateur de concepts mathématiques avec IA",
+                back_to_hub: "Retour au Hub",
+                search_concept: "Concept à explorer",
+                search_placeholder: "Fonction, dérivée, probabilité, matrice...",
+                popular_suggestions: "Suggestions populaires:",
+                detail_level: "Niveau de détail",
+                short: "Court",
+                medium: "Moyen",
+                long: "Détaillé",
+                short_desc: "150-200 mots",
+                medium_desc: "300-400 mots", 
+                long_desc: "500-600 mots",
+                explore: "Explorer le concept",
+                clear: "Effacer",
+                processing: "Analyse en cours...",
+                generated_explanation: "Explication générée",
+                requests: "requêtes",
+                cached: "en cache",
+                concepts: "concepts",
+                by_mydd: "by Mydd",
+                analyzing: "Analyse...",
+                generating: "Génération...",
+                completed: "Terminé !",
+                copied: "Copié !",
+                copy_error: "Échec de la copie",
+                processing_concept: "Exploration en cours...",
+                already_processing: "Une exploration est déjà en cours...",
+                invalid_concept: "Veuillez entrer un concept valide (minimum 2 caractères)",
+                explanation_generated: "Explication générée !",
+                processing_error: "Erreur d'exploration"
+            },
+            en: {
+                title: "🔢 Mathia",
+                subtitle: "Mathematical concepts explorer with AI",
+                back_to_hub: "Back to Hub",
+                search_concept: "Concept to explore",
+                search_placeholder: "Function, derivative, probability, matrix...",
+                popular_suggestions: "Popular suggestions:",
+                detail_level: "Detail level",
+                short: "Short",
+                medium: "Medium",
+                long: "Detailed",
+                short_desc: "150-200 words",
+                medium_desc: "300-400 words",
+                long_desc: "500-600 words",
+                explore: "Explore concept",
+                clear: "Clear",
+                processing: "Analyzing...",
+                generated_explanation: "Generated explanation",
+                requests: "requests",
+                cached: "cached",
+                concepts: "concepts",
+                by_mydd: "by Mydd",
+                analyzing: "Analyzing...",
+                generating: "Generating...",
+                completed: "Completed!",
+                copied: "Copied!",
+                copy_error: "Copy failed",
+                processing_concept: "Exploration in progress...",
+                already_processing: "An exploration is already running...",
+                invalid_concept: "Please enter a valid concept (minimum 2 characters)",
+                explanation_generated: "Explanation generated!",
+                processing_error: "Exploration error"
+            },
+            es: {
+                title: "🔢 Mathia",
+                subtitle: "Explorador de conceptos matemáticos con IA",
+                back_to_hub: "Volver al Hub",
+                search_concept: "Concepto a explorar",
+                search_placeholder: "Función, derivada, probabilidad, matriz...",
+                popular_suggestions: "Sugerencias populares:",
+                detail_level: "Nivel de detalle",
+                short: "Corto",
+                medium: "Medio",
+                long: "Detallado",
+                short_desc: "150-200 palabras",
+                medium_desc: "300-400 palabras",
+                long_desc: "500-600 palabras",
+                explore: "Explorar concepto",
+                clear: "Limpiar",
+                processing: "Analizando...",
+                generated_explanation: "Explicación generada",
+                requests: "solicitudes",
+                cached: "en caché", 
+                concepts: "conceptos",
+                by_mydd: "by Mydd",
+                analyzing: "Analizando...",
+                generating: "Generando...",
+                completed: "¡Completado!",
+                copied: "¡Copiado!",
+                copy_error: "Error al copiar",
+                processing_concept: "Exploración en curso...",
+                already_processing: "Ya hay una exploración en ejecución...",
+                invalid_concept: "Por favor ingrese un concepto válido (mínimo 2 caracteres)",
+                explanation_generated: "¡Explicación generada!",
+                processing_error: "Error de exploración"
+            }
+        };
 
-        async function exploreConcept() {
-            const input = document.getElementById('searchInput');
-            const query = input.value.trim();
+        const popularConcepts = {
+            fr: ["Fonction", "Dérivée", "Intégrale", "Matrice", "Probabilité", "Limite", "Vecteur", "Équation", "Nombre complexe"],
+            en: ["Function", "Derivative", "Integral", "Matrix", "Probability", "Limit", "Vector", "Equation", "Complex number"],
+            es: ["Función", "Derivada", "Integral", "Matriz", "Probabilidad", "Límite", "Vector", "Ecuación", "Número complejo"]
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+
+        function initializeApp() {
+            loadTheme();
+            loadLanguage();
+            initializeSuggestions();
+            loadStats();
+            updateTranslations();
+            const conceptInput = document.getElementById('concept');
+            if (conceptInput) conceptInput.focus();
+        }
+
+        function loadTheme() {
+            currentTheme = 'light';
+            document.documentElement.setAttribute('data-theme', 'light');
+            updateThemeToggle();
+        }
+
+        function loadLanguage() {
+            currentLanguage = 'fr';
+            document.getElementById('languageSelector').value = 'fr';
+            updateTranslations();
+        }
+
+        function toggleTheme() {
+            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', currentTheme);
+            updateThemeToggle();
+        }
+
+        function updateThemeToggle() {
+            const toggle = document.getElementById('themeToggle');
+            if (toggle) {
+                toggle.textContent = currentTheme === 'light' ? '🌙' : '☀️';
+            }
+        }
+
+        function changeLanguage() {
+            const selector = document.getElementById('languageSelector');
+            currentLanguage = selector.value;
+            updateTranslations();
+            initializeSuggestions();
+        }
+
+        function updateTranslations() {
+            const elements = document.querySelectorAll('[data-text-key]');
+            elements.forEach(element => {
+                const key = element.getAttribute('data-text-key');
+                if (translations[currentLanguage] && translations[currentLanguage][key]) {
+                    element.textContent = translations[currentLanguage][key];
+                }
+            });
+
+            const conceptInput = document.getElementById('concept');
+            if (conceptInput && translations[currentLanguage].search_placeholder) {
+                conceptInput.placeholder = translations[currentLanguage].search_placeholder;
+            }
+        }
+
+        function selectDetail(detail, element) {
+            document.querySelectorAll('.detail-btn').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            currentDetail = detail;
+        }
+
+        function copyResult() {
+            const content = document.getElementById('resultContent');
+            const copyBtn = document.getElementById('copyBtn');
             
-            if (!query) {
-                showNotification('Veuillez entrer un concept à explorer', 'error');
+            if (!content || !content.textContent) {
+                showNotification(translations[currentLanguage].copy_error, 'error');
                 return;
             }
+
+            const textContent = content.textContent || content.innerText;
             
-            const mainContent = document.getElementById('mainContent');
-            mainContent.innerHTML = '<div style="text-align: center; padding: 60px;"><div class="loading"></div><p style="margin-top: 20px; color: var(--text-secondary);">Exploration en cours...</p></div>';
+            navigator.clipboard.writeText(textContent).then(function() {
+                copyBtn.textContent = '✅';
+                copyBtn.classList.add('success');
+                showNotification(translations[currentLanguage].copied, 'success');
+                
+                setTimeout(() => {
+                    copyBtn.textContent = '📋';
+                    copyBtn.classList.remove('success');
+                }, 2000);
+            }).catch(function() {
+                showNotification(translations[currentLanguage].copy_error, 'error');
+            });
+        }
+
+        function handleFormSubmit(event) {
+            event.preventDefault();
             
+            if (isProcessing) {
+                showNotification(translations[currentLanguage].already_processing, 'info');
+                return false;
+            }
+
+            const conceptInput = document.getElementById('concept');
+            const concept = conceptInput ? conceptInput.value.trim() : '';
+            
+            if (!concept || concept.length < 2) {
+                showNotification(translations[currentLanguage].invalid_concept, 'error');
+                if (conceptInput) conceptInput.focus();
+                return false;
+            }
+
+            processConcept(concept, currentLanguage, currentDetail);
+            return false;
+        }
+
+        function initializeSuggestions() {
+            const container = document.getElementById('suggestionChips');
+            if (!container) return;
+            
+            container.innerHTML = '';
+            const concepts = popularConcepts[currentLanguage] || popularConcepts.fr;
+            
+            concepts.forEach(concept => {
+                const chip = document.createElement('button');
+                chip.className = 'chip';
+                chip.textContent = concept;
+                chip.type = 'button';
+                chip.onclick = function() {
+                    const conceptInput = document.getElementById('concept');
+                    if (conceptInput) {
+                        conceptInput.value = concept;
+                        conceptInput.focus();
+                    }
+                };
+                container.appendChild(chip);
+            });
+        }
+
+        async function loadStats() {
             try {
+                const response = await fetch('/api/stats');
+                if (response.ok) {
+                    const stats = await response.json();
+                    updateStatsDisplay(stats);
+                }
+            } catch (error) {
+                console.log('Stats error:', error);
+            }
+        }
+
+        function updateStatsDisplay(stats) {
+            const elements = {
+                totalRequests: document.getElementById('totalRequests'),
+                cacheHits: document.getElementById('cacheHits'),
+                conceptsExplored: document.getElementById('conceptsExplored')
+            };
+
+            if (elements.totalRequests) elements.totalRequests.textContent = stats.requests || 0;
+            if (elements.cacheHits) elements.cacheHits.textContent = stats.cache_hits || 0;
+            if (elements.conceptsExplored) elements.conceptsExplored.textContent = stats.concepts_explored || 0;
+        }
+
+        async function processConcept(concept, language, detailLevel) {
+            isProcessing = true;
+            const exploreBtn = document.getElementById('exploreBtn');
+            const exploreText = exploreBtn.querySelector('[data-text-key="explore"]');
+            
+            if (exploreBtn) {
+                exploreBtn.disabled = true;
+                if (exploreText) exploreText.textContent = translations[currentLanguage].processing_concept;
+            }
+            
+            showStatus(translations[currentLanguage].analyzing);
+            hideResult();
+
+            try {
+                const requestData = {
+                    concept: concept,
+                    language: language,
+                    detail_level: detailLevel
+                };
+                
+                updateProgress(20);
+                updateStatus(translations[currentLanguage].analyzing);
+                
                 const response = await fetch('/api/explore', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
-                    body: JSON.stringify({ query: query })
+                    body: JSON.stringify(requestData)
                 });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    currentConcept = data.concept;
-                    displayConcept(data);
-                    showNotification('Concept exploré avec succès !', 'success');
-                } else {
-                    mainContent.innerHTML = `
-                        <div class="welcome-message">
-                            <h2>❌ Erreur</h2>
-                            <p>${data.error || 'Impossible de trouver ce concept'}</p>
-                        </div>
-                    `;
-                    showNotification('Erreur lors de l\'exploration', 'error');
+
+                updateProgress(60);
+                updateStatus(translations[currentLanguage].generating);
+
+                if (!response.ok) {
+                    let errorMessage = `HTTP Error ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error || errorMessage;
+                    } catch (e) {
+                        const errorText = await response.text();
+                        errorMessage = errorText || errorMessage;
+                    }
+                    throw new Error(errorMessage);
                 }
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Unknown error');
+                }
+
+                updateProgress(100);
+                updateStatus(translations[currentLanguage].completed);
+                await sleep(500);
+
+                showResult(data);
+                hideStatus();
                 
+                setTimeout(loadStats, 500);
+                showNotification(translations[currentLanguage].explanation_generated, 'success');
+
             } catch (error) {
                 console.error('Error:', error);
-                mainContent.innerHTML = `
-                    <div class="welcome-message">
-                        <h2>❌ Erreur de connexion</h2>
-                        <p>Impossible de se connecter au serveur</p>
-                    </div>
-                `;
-                showNotification('Erreur de connexion', 'error');
+                showNotification(error.message || translations[currentLanguage].processing_error, 'error');
+                hideStatus();
+            } finally {
+                isProcessing = false;
+                if (exploreBtn && exploreText) {
+                    exploreBtn.disabled = false;
+                    exploreText.textContent = translations[currentLanguage].explore;
+                }
             }
         }
 
-        function displayConcept(data) {
-            const concept = data.concept;
-            const mainContent = document.getElementById('mainContent');
-            
-            // Générer les étoiles de difficulté
-            let difficultyStars = '';
-            for (let i = 1; i <= 5; i++) {
-                difficultyStars += `<span class="difficulty-star ${i > concept.difficulty ? 'empty' : ''}">★</span>`;
-            }
-            
-            // Générer les exemples
-            let examplesHtml = '';
-            if (concept.examples && concept.examples.length > 0) {
-                examplesHtml = `
-                    <div class="concept-section">
-                        <h3 class="section-title">📝 Exemples</h3>
-                        <div class="examples-grid">
-                            ${concept.examples.map(ex => `<div class="example-card">${ex}</div>`).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-            
-            // Générer les concepts liés
-            let relatedHtml = '';
-            if (concept.related_concepts && concept.related_concepts.length > 0) {
-                relatedHtml = `
-                    <div class="concept-section">
-                        <h3 class="section-title">🔗 Concepts Liés</h3>
-                        <div class="related-concepts">
-                            ${concept.related_concepts.map(rc => `
-                                <span class="related-tag" onclick="quickExplore('${rc}')">${rc}</span>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-            
-            mainContent.innerHTML = `
-                <div class="concept-card">
-                    <div class="concept-header">
-                        <h2 class="concept-title">${concept.name}</h2>
-                        <div class="concept-meta">
-                            <div class="meta-tag">📂 ${concept.category}</div>
-                            <div class="meta-tag">
-                                <div class="difficulty-indicator">
-                                    ${difficultyStars}
-                                    <span style="margin-left: 10px;">${concept.difficulty_text}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="concept-section">
-                        <h3 class="section-title">📖 Définition</h3>
-                        <div class="section-content">
-                            ${concept.definition}
-                        </div>
-                    </div>
-                    
-                    <div class="concept-section">
-                        <h3 class="section-title">💡 Explication Enrichie</h3>
-                        <div class="section-content">
-                            ${data.ai_explanation}
-                        </div>
-                    </div>
-                    
-                    ${examplesHtml}
-                    ${relatedHtml}
-                    
-                    ${data.search_hint ? `
-                        <div style="margin-top: 20px; padding: 15px; background: rgba(102, 126, 234, 0.1); border-radius: 15px; color: var(--text-secondary); font-size: 0.9rem;">
-                            ℹ️ ${data.search_hint}
-                        </div>
-                    ` : ''}
-                    
-                    ${!data.found_in_database ? `
-                        <div style="margin-top: 20px; padding: 15px; background: rgba(243, 156, 18, 0.1); border-radius: 15px; color: var(--text-secondary); font-size: 0.9rem;">
-                            ⚠️ Ce concept a été généré par l'IA car il n'est pas encore dans notre base de données.
-                        </div>
-                    ` : ''}
-                </div>
-            `;
+        function updateProgress(percent) {
+            const progressFill = document.getElementById('progressFill');
+            if (progressFill) progressFill.style.width = percent + '%';
         }
 
-        function quickExplore(concept) {
-            document.getElementById('searchInput').value = concept;
-            exploreConcept();
+        function updateStatus(message) {
+            const statusText = document.getElementById('statusText');
+            if (statusText) statusText.textContent = message;
+        }
+
+        function showStatus(message) {
+            updateStatus(message);
+            const statusDiv = document.getElementById('status');
+            if (statusDiv) statusDiv.classList.add('active');
+            updateProgress(0);
+        }
+
+        function hideStatus() {
+            const statusDiv = document.getElementById('status');
+            if (statusDiv) statusDiv.classList.remove('active');
+            setTimeout(() => updateProgress(0), 300);
+        }
+
+        function showResult(data) {
+            const elements = {
+                title: document.getElementById('resultTitle'),
+                content: document.getElementById('resultContent'),
+                meta: document.getElementById('resultMeta'),
+                result: document.getElementById('result')
+            };
+            
+            const titleSpan = elements.title ? elements.title.querySelector('[data-text-key="generated_explanation"]') : null;
+            if (titleSpan) {
+                elements.title.innerHTML = '📖 <span data-text-key="generated_explanation">' + translations[currentLanguage].generated_explanation + '</span>';
+            }
+            if (elements.content) elements.content.innerHTML = data.explanation;
+            
+            let metaText = `🤖 Mistral AI • ${data.processing_time}s • ${data.detail_level}`;
+            if (elements.meta) elements.meta.textContent = metaText;
+
+            if (elements.result) elements.result.classList.add('active');
+        }
+
+        function hideResult() {
+            const resultDiv = document.getElementById('result');
+            if (resultDiv) resultDiv.classList.remove('active');
+        }
+
+        function clearAll() {
+            const conceptInput = document.getElementById('concept');
+            if (conceptInput) {
+                conceptInput.value = '';
+                conceptInput.focus();
+            }
+            hideStatus();
+            hideResult();
+            isProcessing = false;
+            
+            const exploreBtn = document.getElementById('exploreBtn');
+            const exploreText = exploreBtn ? exploreBtn.querySelector('[data-text-key="explore"]') : null;
+            if (exploreBtn) {
+                exploreBtn.disabled = false;
+                if (exploreText) exploreText.textContent = translations[currentLanguage].explore;
+            }
         }
 
         function showNotification(message, type = 'info') {
@@ -1019,51 +1366,37 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             notification.textContent = message;
             
             document.body.appendChild(notification);
-            
             setTimeout(() => notification.classList.add('show'), 100);
-            
             setTimeout(() => {
                 notification.classList.remove('show');
                 setTimeout(() => notification.remove(), 300);
             }, 3000);
         }
 
-        // Auto-load concepts list
-        async function loadConceptsList() {
-            try {
-                const response = await fetch('/api/concepts');
-                const data = await response.json();
-                
-                if (data.success && data.concepts) {
-                    const conceptList = document.getElementById('conceptList');
-                    conceptList.innerHTML = data.concepts.map(concept => `
-                        <li class="concept-item" onclick="quickExplore('${concept.name.toLowerCase()}')">
-                            <span class="name">${concept.name}</span>
-                            <span class="category">${concept.category}</span>
-                        </li>
-                    `).join('');
-                }
-            } catch (error) {
-                console.error('Error loading concepts:', error);
-            }
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('Mathia Explorer loaded');
-            loadConceptsList();
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+                const target = e.target;
+                if (target && target.id === 'concept' && !isProcessing && target.value.trim()) {
+                    e.preventDefault();
+                    handleFormSubmit(e);
+                }
+            }
         });
     </script>
 </body>
 </html>'''
 
 if __name__ == '__main__':
-    print("🔢 MATHIA V3.0 - Explorateur de Concepts Mathématiques")
+    print("🔢 MATHIA V3.0 - Explorateur Mathématique avec IA")
     print("=" * 60)
     
     try:
         from mistralai import Mistral
-        print("✅ Dépendances installées")
+        print("✅ Dépendances OK")
         
         port = int(os.environ.get('PORT', 5000))
         debug_mode = os.environ.get('FLASK_ENV') != 'production'
@@ -1071,20 +1404,13 @@ if __name__ == '__main__':
         print(f"🌐 Port: {port}")
         print(f"🔧 Debug: {debug_mode}")
         print(f"🔑 Clés Mistral: {len(mathia.api_keys)} configurées")
-        print(f"📚 Concepts disponibles: {len(mathia.concept_database)}")
         
-        print("\n🎯 Fonctionnalités:")
-        print("   • Exploration interactive de concepts")
-        print("   • Explications enrichies par IA")
-        print("   • Réseau de concepts liés")
-        print("   • Navigation intuitive")
-        print("   • Base de 10+ concepts mathématiques")
-        
-        print("\n📂 Catégories:")
-        categories = set(c.category for c in mathia.concept_database.values())
-        for cat in categories:
-            count = sum(1 for c in mathia.concept_database.values() if c.category == cat)
-            print(f"   • {cat}: {count} concepts")
+        print("\n✨ Fonctionnalités:")
+        print("   • Exploration automatique avec Mistral AI")
+        print("   • Design identique à Wiki Summarizer")
+        print("   • Support multilingue (FR/EN/ES)")
+        print("   • 3 niveaux de détail")
+        print("   • Cache intelligent")
         
         print("\n🚀 Démarrage de Mathia...")
         
