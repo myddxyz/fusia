@@ -20,6 +20,14 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# CORS Configuration globale
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
 # Configuration
 class Config:
     # Clés API Mistral (hardcodées pour facilité d'utilisation)
@@ -396,19 +404,22 @@ def index():
 @app.route('/api/explore', methods=['POST', 'OPTIONS'])
 @require_rate_limit
 def explore():
-    """API d'exploration de concepts"""
+    """API d'exploration de concepts - CORRIGÉ"""
+    
+    logger.info(f"📨 Requête reçue: {request.method} depuis {request.remote_addr}")
     
     # CORS preflight
     if request.method == 'OPTIONS':
-        response = jsonify({'status': 'ok'})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-        response.headers.add('Access-Control-Allow-Methods', 'POST')
-        return response
+        return '', 204
     
     try:
+        # Log détaillé pour débogage
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Headers: {dict(request.headers)}")
+        
         # Validation du Content-Type
         if not request.is_json:
+            logger.error(f"❌ Content-Type invalide: {request.content_type}")
             return jsonify({
                 'success': False,
                 'error': 'Content-Type doit être application/json'
@@ -417,6 +428,7 @@ def explore():
         data = request.get_json()
         
         if not data:
+            logger.error("❌ Corps JSON vide")
             return jsonify({
                 'success': False,
                 'error': 'Corps de requête JSON requis'
@@ -427,35 +439,41 @@ def explore():
         language = data.get('language', 'fr')
         detail_level = data.get('detail_level', 'moyen')
         
+        logger.info(f"📝 Paramètres reçus: concept='{concept}', language={language}, detail_level={detail_level}")
+        
         # Validation de la langue
         if language not in ['fr', 'en', 'es']:
+            logger.warning(f"Langue invalide: {language}, utilisation de 'fr'")
             language = 'fr'
         
         # Validation du niveau de détail
         if detail_level not in ['court', 'moyen', 'long']:
+            logger.warning(f"Niveau invalide: {detail_level}, utilisation de 'moyen'")
             detail_level = 'moyen'
         
         if not concept:
+            logger.error("❌ Concept manquant")
             return jsonify({
                 'success': False,
                 'error': 'Le paramètre "concept" est requis'
             }), 400
         
         # Traitement
+        logger.info(f"🚀 Démarrage du traitement...")
         result = mathia.process_concept(concept, language, detail_level)
         
         if not result.get('success'):
+            logger.error(f"❌ Échec du traitement: {result.get('error')}")
             return jsonify(result), 500
         
-        response = jsonify(result)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response, 200
+        logger.info(f"✅ Traitement réussi en {result.get('processing_time')}s")
+        return jsonify(result), 200
         
     except Exception as e:
         logger.error(f"💥 Erreur endpoint: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
-            'error': 'Erreur interne du serveur'
+            'error': f'Erreur interne du serveur: {str(e)}'
         }), 500
 
 
@@ -466,6 +484,7 @@ def get_stats():
         stats = mathia.stats.copy()
         stats['cache_size'] = mathia.cache.size()
         stats['cache_max_size'] = Config.CACHE_MAX_SIZE
+        logger.info(f"📊 Stats demandées: {stats}")
         return jsonify(stats), 200
     except Exception as e:
         logger.error(f"Erreur stats: {str(e)}")
@@ -475,17 +494,19 @@ def get_stats():
 @app.route('/health')
 def health():
     """Health check endpoint"""
-    return jsonify({
+    health_data = {
         'status': 'OK',
         'service': 'Mathia Explorer',
         'version': '4.0',
         'api_keys_configured': len(Config.API_KEYS),
         'cache_size': mathia.cache.size(),
         'stats': mathia.stats
-    }), 200
+    }
+    logger.info(f"❤️ Health check: {health_data['status']}")
+    return jsonify(health_data), 200
 
 
-# Template HTML complet
+# Template HTML complet avec tous les styles et fonctionnalités
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1358,6 +1379,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     detail_level: detailLevel
                 };
                 
+                console.log('🚀 Envoi requête:', requestData);
+                
                 updateProgress(20);
                 updateStatus(translations[currentLanguage].analyzing);
                 
@@ -1370,6 +1393,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     body: JSON.stringify(requestData)
                 });
 
+                console.log('📡 Réponse HTTP:', response.status, response.statusText);
+
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
 
@@ -1380,6 +1405,10 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                         if (contentType && contentType.includes('application/json')) {
                             const errorData = await response.json();
                             errorMessage = errorData.error || errorMessage;
+                            console.error('❌ Erreur serveur:', errorData);
+                        } else {
+                            const errorText = await response.text();
+                            console.error('❌ Réponse non-JSON:', errorText);
                         }
                     } catch (e) {
                         console.error('Error parsing error response:', e);
@@ -1393,6 +1422,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 }
 
                 const data = await response.json();
+                console.log('✅ Données reçues:', data);
 
                 if (!data.success) {
                     throw new Error(data.error || 'Unknown error');
@@ -1409,7 +1439,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 showNotification(translations[currentLanguage].explanation_generated, 'success');
 
             } catch (error) {
-                console.error('Error:', error);
+                console.error('💥 Erreur complète:', error);
                 showNotification(error.message || translations[currentLanguage].processing_error, 'error');
                 hideStatus();
             } finally {
