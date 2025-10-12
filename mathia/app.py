@@ -402,14 +402,16 @@ def index():
 
 
 @app.route('/api/explore', methods=['POST', 'OPTIONS'])
-@require_rate_limit
 def explore():
-    """API d'exploration de concepts - CORRIGÉ"""
+    """API d'exploration de concepts - CORRIGÉ SANS RATE LIMIT"""
     
     logger.info(f"📨 Requête reçue: {request.method} depuis {request.remote_addr}")
+    logger.info(f"URL complète: {request.url}")
+    logger.info(f"Path: {request.path}")
     
     # CORS preflight
     if request.method == 'OPTIONS':
+        logger.info("✅ OPTIONS request - returning 204")
         return '', 204
     
     try:
@@ -1379,7 +1381,14 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     detail_level: detailLevel
                 };
                 
-                console.log('🚀 Envoi requête:', requestData);
+                // LOG DÉTAILLÉ
+                console.log('🚀 ========== DÉBUT REQUÊTE ==========');
+                console.log('📍 URL appelée:', window.location.origin + '/api/explore');
+                console.log('📦 Données envoyées:', requestData);
+                console.log('🌐 Headers:', {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                });
                 
                 updateProgress(20);
                 updateStatus(translations[currentLanguage].analyzing);
@@ -1393,25 +1402,40 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     body: JSON.stringify(requestData)
                 });
 
-                console.log('📡 Réponse HTTP:', response.status, response.statusText);
+                console.log('📡 ========== RÉPONSE REÇUE ==========');
+                console.log('📊 Status:', response.status, response.statusText);
+                console.log('🔗 URL réponse:', response.url);
+                console.log('📋 Headers réponse:', [...response.headers.entries()]);
 
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
 
                 if (!response.ok) {
+                    console.error('❌ ========== ERREUR HTTP ==========');
+                    console.error('Status Code:', response.status);
+                    
                     let errorMessage = `HTTP ${response.status}`;
                     try {
                         const contentType = response.headers.get('content-type');
+                        console.log('Content-Type de l\'erreur:', contentType);
+                        
                         if (contentType && contentType.includes('application/json')) {
                             const errorData = await response.json();
+                            console.error('❌ Données d\'erreur JSON:', errorData);
                             errorMessage = errorData.error || errorMessage;
-                            console.error('❌ Erreur serveur:', errorData);
                         } else {
                             const errorText = await response.text();
-                            console.error('❌ Réponse non-JSON:', errorText);
+                            console.error('❌ Texte d\'erreur:', errorText);
+                            errorMessage = errorText.substring(0, 200);
                         }
                     } catch (e) {
-                        console.error('Error parsing error response:', e);
+                        console.error('❌ Impossible de parser l\'erreur:', e);
+                    }
+                    
+                    if (response.status === 404) {
+                        console.error('❌ ERREUR 404 - La route /api/explore n\'existe pas !');
+                        console.error('Vérifiez que le serveur Flask est bien démarré');
+                        console.error('URL tentée:', response.url);
                     }
                     
                     if (response.status === 429) {
@@ -1422,7 +1446,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 }
 
                 const data = await response.json();
-                console.log('✅ Données reçues:', data);
+                console.log('✅ ========== SUCCÈS ==========');
+                console.log('📦 Données reçues:', data);
 
                 if (!data.success) {
                     throw new Error(data.error || 'Unknown error');
@@ -1439,7 +1464,10 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 showNotification(translations[currentLanguage].explanation_generated, 'success');
 
             } catch (error) {
-                console.error('💥 Erreur complète:', error);
+                console.error('💥 ========== ERREUR CATCH ==========');
+                console.error('Type:', error.name);
+                console.error('Message:', error.message);
+                console.error('Stack:', error.stack);
                 showNotification(error.message || translations[currentLanguage].processing_error, 'error');
                 hideStatus();
             } finally {
