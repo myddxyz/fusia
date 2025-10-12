@@ -1251,12 +1251,24 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
 
-                const data = await response.json();
-                
                 if (!response.ok) {
-                    const errorMessage = data.error || `HTTP Error ${response.status}`;
+                    let errorMessage = `HTTP Error ${response.status}`;
+                    try {
+                        const contentType = response.headers.get('content-type');
+                        if (contentType && contentType.includes('application/json')) {
+                            const errorData = await response.json();
+                            errorMessage = errorData.error || errorMessage;
+                        } else {
+                            const errorText = await response.text();
+                            errorMessage = errorText.substring(0, 200) || errorMessage;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing error response:', e);
+                    }
                     throw new Error(errorMessage);
                 }
+
+                const data = await response.json();
 
                 if (!data.success) {
                     throw new Error(data.error || 'Unknown error');
