@@ -98,7 +98,6 @@ class MathiaExplorer:
             
             lang_instruction = self.get_language_instruction(language)
             
-            # Déterminer la longueur selon le niveau de détail
             word_counts = {
                 'court': '150-200 mots',
                 'moyen': '300-400 mots',
@@ -186,7 +185,6 @@ Réponse:"""
         
         concept = concept.strip()
         
-        # Vérifier le cache
         cache_key = self.get_cache_key(concept, language, detail_level)
         if cache_key in self.cache:
             logger.info("💾 Résultat trouvé en cache")
@@ -212,7 +210,6 @@ Réponse:"""
                 'source': 'mistral_ai'
             }
             
-            # Sauvegarder en cache
             self.cache[cache_key] = result
             self.stats['concepts_explored'] += 1
             logger.info(f"✅ Traitement terminé en {result['processing_time']}s")
@@ -225,7 +222,6 @@ Réponse:"""
                 'error': f'Erreur lors du traitement: {str(e)}'
             }
 
-# Instance globale
 mathia = MathiaExplorer()
 
 @app.route('/')
@@ -288,7 +284,6 @@ def health():
         'version': '3.0'
     })
 
-# Template HTML avec le même design que Wiki Summarizer
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -299,25 +294,29 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         :root {
-            --bg-primary: #f8fafc;
-            --bg-secondary: #e2e8f0;
+            --bg-primary: #f0f4f8;
+            --bg-secondary: #dbe4ec;
             --bg-tertiary: #ffffff;
-            --text-primary: #1a202c;
-            --text-secondary: #4a5568;
-            --accent: #667eea;
-            --accent-secondary: #764ba2;
-            --border: #e2e8f0;
-            --shadow: rgba(0, 0, 0, 0.1);
+            --text-primary: #0d1b2a;
+            --text-secondary: #415a77;
+            --accent: #e63946;
+            --accent-secondary: #f77f00;
+            --accent-hover: #d62828;
+            --border: #cbd5e1;
+            --shadow: rgba(230, 57, 70, 0.15);
         }
         
         [data-theme="dark"] {
-            --bg-primary: #1a202c;
-            --bg-secondary: #2d3748;
-            --bg-tertiary: #4a5568;
-            --text-primary: #f7fafc;
-            --text-secondary: #e2e8f0;
-            --border: #4a5568;
-            --shadow: rgba(0, 0, 0, 0.3);
+            --bg-primary: #0d1b2a;
+            --bg-secondary: #1b263b;
+            --bg-tertiary: #415a77;
+            --text-primary: #e0e1dd;
+            --text-secondary: #cbd5e1;
+            --accent: #e63946;
+            --accent-secondary: #f77f00;
+            --accent-hover: #ff4757;
+            --border: #415a77;
+            --shadow: rgba(230, 57, 70, 0.25);
         }
         
         body {
@@ -331,7 +330,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         [data-theme="light"] body {
-            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            background: linear-gradient(135deg, #e63946 0%, #f77f00 100%);
             color: white;
         }
         
@@ -345,7 +344,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         [data-theme="dark"] .top-header {
-            background: rgba(26, 32, 44, 0.9);
+            background: rgba(13, 27, 42, 0.95);
             border-bottom: 1px solid var(--border);
         }
         
@@ -445,7 +444,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         .title {
-            font-size: 2.5rem; font-weight: 700; margin-bottom: 10px; color: white;
+            font-size: 2.8rem; font-weight: 700; margin-bottom: 10px; color: white;
             text-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
         
@@ -455,8 +454,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         .subtitle { 
-            color: rgba(255,255,255,0.9); 
-            font-size: 1.1rem; 
+            color: rgba(255,255,255,0.95); 
+            font-size: 1.15rem; 
         }
         
         [data-theme="dark"] .subtitle {
@@ -533,7 +532,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         [data-theme="dark"] .input:focus {
             background: var(--bg-secondary);
             border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+            box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.2);
         }
         
         .input::placeholder { color: rgba(255,255,255,0.8); }
@@ -666,8 +665,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         [data-theme="dark"] .btn-primary:hover:not(:disabled) {
-            background: #5a6fd8;
-            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            background: var(--accent-hover);
+            box-shadow: 0 10px 30px var(--shadow);
         }
         
         .controls {
@@ -716,7 +715,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         [data-theme="dark"] .progress-fill {
-            background: linear-gradient(90deg, var(--accent), #5a6fd8);
+            background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
         }
         
         .result {
@@ -830,9 +829,9 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
         
         .notification.show { transform: translateX(0); }
-        .notification.error { background: rgba(239, 68, 68, 0.9); }
-        .notification.success { background: rgba(34, 197, 94, 0.9); }
-        .notification.info { background: rgba(59, 130, 246, 0.9); }
+        .notification.error { background: rgba(214, 40, 40, 0.95); }
+        .notification.success { background: rgba(34, 197, 94, 0.95); }
+        .notification.info { background: rgba(247, 127, 0, 0.95); }
         
         @media (max-width: 768px) {
             .top-header { padding: 15px 20px; flex-direction: column; gap: 15px; }
@@ -1078,7 +1077,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
         function loadLanguage() {
             currentLanguage = 'fr';
-            document.getElementById('languageSelector').value = 'fr';
+            const selector = document.getElementById('languageSelector');
+            if (selector) selector.value = 'fr';
             updateTranslations();
         }
 
@@ -1097,7 +1097,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
         function changeLanguage() {
             const selector = document.getElementById('languageSelector');
-            currentLanguage = selector.value;
+            if (selector) currentLanguage = selector.value;
             updateTranslations();
             initializeSuggestions();
         }
@@ -1219,7 +1219,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         async function processConcept(concept, language, detailLevel) {
             isProcessing = true;
             const exploreBtn = document.getElementById('exploreBtn');
-            const exploreText = exploreBtn.querySelector('[data-text-key="explore"]');
+            const exploreText = exploreBtn ? exploreBtn.querySelector('[data-text-key="explore"]') : null;
             
             if (exploreBtn) {
                 exploreBtn.disabled = true;
@@ -1323,8 +1323,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 result: document.getElementById('result')
             };
             
-            const titleSpan = elements.title ? elements.title.querySelector('[data-text-key="generated_explanation"]') : null;
-            if (titleSpan) {
+            if (elements.title) {
                 elements.title.innerHTML = '📖 <span data-text-key="generated_explanation">' + translations[currentLanguage].generated_explanation + '</span>';
             }
             if (elements.content) elements.content.innerHTML = data.explanation;
@@ -1407,7 +1406,7 @@ if __name__ == '__main__':
         
         print("\n✨ Fonctionnalités:")
         print("   • Exploration automatique avec Mistral AI")
-        print("   • Design identique à Wiki Summarizer")
+        print("   • Design moderne rouge/orange")
         print("   • Support multilingue (FR/EN/ES)")
         print("   • 3 niveaux de détail")
         print("   • Cache intelligent")
