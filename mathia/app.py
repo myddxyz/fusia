@@ -1,84 +1,30 @@
 from flask import Flask, request, jsonify, render_template_string
 import os
 import json
-import base64
-import io
-import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import sympy as sp
-from sympy import *
 from mistralai import Mistral
-import time
-import re
 import logging
-from datetime import datetime
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any, Tuple
-import traceback
-import random
+from typing import Dict, List, Optional
+import re
 
-# Configuration du logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Configuration matplotlib avec style moderne
-plt.style.use('dark_background')
-plt.rcParams.update({
-    'font.size': 12,
-    'axes.linewidth': 2,
-    'lines.linewidth': 3,
-    'figure.facecolor': '#0f0f23',
-    'axes.facecolor': '#1a1a3a',
-    'text.color': 'white',
-    'axes.labelcolor': 'white',
-    'xtick.color': 'white',
-    'ytick.color': 'white'
-})
-
 @dataclass
-class UserProfile:
-    """Profil utilisateur avec gamification"""
-    level: int = 1
-    xp: int = 0
-    badges: List[str] = None
-    problems_solved: int = 0
-    streak: int = 0
-    favorite_topics: List[str] = None
-    
-    def __post_init__(self):
-        if self.badges is None:
-            self.badges = []
-        if self.favorite_topics is None:
-            self.favorite_topics = []
-
-@dataclass
-class Problem:
-    """Structure pour un problème mathématique"""
-    id: str
-    title: str
-    description: str
-    category: str
-    difficulty: int  # 1-5
-    solution_steps: List[str]
-    answer: str
-    hints: List[str]
-    xp_reward: int
-
-@dataclass
-class GameElement:
-    """Éléments de gamification"""
+class MathConcept:
+    """Structure pour un concept mathématique"""
     name: str
-    description: str
-    icon: str
-    condition: str
-    reward_xp: int = 0
+    definition: str
+    category: str
+    related_concepts: List[str]
+    examples: List[str]
+    difficulty: int  # 1-5
+    keywords: List[str]
 
-class MathiaCore:
-    """Cœur de Mathia - Assistant mathématique gamifié"""
+class MathiaExplorer:
+    """Explorateur interactif de concepts mathématiques"""
     
     def __init__(self):
         self.api_keys = [
@@ -87,18 +33,10 @@ class MathiaCore:
             os.environ.get('MISTRAL_KEY_3', 'cvkQHVcomFFEW47G044x2p4DTyk5BIc7')
         ]
         self.current_key = 0
-        self.user_profile = UserProfile()
-        self.conversation_history = []
-        self.problem_bank = self._initialize_problems()
-        self.badges = self._initialize_badges()
-        self.stats = {
-            'problems_solved': 0,
-            'graphs_generated': 0,
-            'total_interactions': 0,
-            'favorite_topic': 'algebra'
-        }
+        self.concept_database = self._initialize_concepts()
+        self.exploration_history = []
         
-        logger.info("Mathia Core initialized with gamification")
+        logger.info("Mathia Explorer initialized")
     
     def get_mistral_client(self):
         """Obtient un client Mistral fonctionnel"""
@@ -114,615 +52,358 @@ class MathiaCore:
         
         return Mistral(api_key=self.api_keys[0])
     
-    def _initialize_problems(self):
-        """Initialise une banque de problèmes"""
-        return [
-            Problem(
-                id="eq_linear_01",
-                title="Équation linéaire",
-                description="Résolvez: 3x + 7 = 22",
-                category="algebra",
-                difficulty=1,
-                solution_steps=[
-                    "3x + 7 = 22",
-                    "3x = 22 - 7",
-                    "3x = 15",
-                    "x = 15/3 = 5"
-                ],
-                answer="x = 5",
-                hints=["Isolez d'abord le terme en x", "Soustrayez 7 des deux côtés"],
-                xp_reward=10
-            ),
-            Problem(
-                id="func_quad_01",
-                title="Fonction quadratique",
-                description="Analysez f(x) = x² - 4x + 3",
-                category="functions",
-                difficulty=3,
-                solution_steps=[
-                    "f(x) = x² - 4x + 3",
-                    "Forme canonique: f(x) = (x-2)² - 1",
-                    "Sommet: (2, -1)",
-                    "Racines: x = 1 et x = 3"
-                ],
-                answer="Sommet: (2,-1), Racines: 1 et 3",
-                hints=["Complétez le carré", "Utilisez la formule quadratique"],
-                xp_reward=30
-            ),
-            Problem(
-                id="deriv_01",
-                title="Dérivée simple",
-                description="Calculez la dérivée de f(x) = x³ + 2x² - 5x + 1",
-                category="calculus",
+    def _initialize_concepts(self):
+        """Initialise la base de concepts mathématiques"""
+        return {
+            "fonction": MathConcept(
+                name="Fonction",
+                definition="Une fonction est une relation qui associe à chaque élément d'un ensemble de départ (domaine) exactement un élément d'un ensemble d'arrivée.",
+                category="Analyse",
+                related_concepts=["dérivée", "intégrale", "limite", "continuité", "domaine"],
+                examples=["f(x) = x²", "f(x) = sin(x)", "f(x) = 2x + 3"],
                 difficulty=2,
-                solution_steps=[
-                    "f(x) = x³ + 2x² - 5x + 1",
-                    "f'(x) = d/dx(x³) + d/dx(2x²) + d/dx(-5x) + d/dx(1)",
-                    "f'(x) = 3x² + 4x - 5 + 0",
-                    "f'(x) = 3x² + 4x - 5"
-                ],
-                answer="f'(x) = 3x² + 4x - 5",
-                hints=["Utilisez la règle de puissance", "La dérivée d'une constante est 0"],
-                xp_reward=20
+                keywords=["relation", "correspondance", "variable", "image", "antécédent"]
+            ),
+            "dérivée": MathConcept(
+                name="Dérivée",
+                definition="La dérivée d'une fonction mesure la vitesse à laquelle la fonction change. C'est le taux de variation instantané.",
+                category="Analyse",
+                related_concepts=["fonction", "tangente", "vitesse", "accélération", "intégrale"],
+                examples=["d/dx(x²) = 2x", "d/dx(sin(x)) = cos(x)", "d/dx(eˣ) = eˣ"],
+                difficulty=3,
+                keywords=["variation", "pente", "tangente", "instantané", "limite"]
+            ),
+            "nombre complexe": MathConcept(
+                name="Nombre Complexe",
+                definition="Un nombre complexe est un nombre de la forme a + bi où a et b sont des nombres réels et i est l'unité imaginaire (i² = -1).",
+                category="Algèbre",
+                related_concepts=["nombre réel", "plan complexe", "module", "argument", "conjugué"],
+                examples=["3 + 4i", "2i", "-1 + i", "5"],
+                difficulty=3,
+                keywords=["imaginaire", "réel", "partie", "module", "argument"]
+            ),
+            "probabilité": MathConcept(
+                name="Probabilité",
+                definition="La probabilité mesure la chance qu'un événement se produise. Elle est comprise entre 0 (impossible) et 1 (certain).",
+                category="Statistiques",
+                related_concepts=["événement", "variable aléatoire", "espérance", "variance", "loi"],
+                examples=["P(pile) = 0.5 pour une pièce", "P(dé = 6) = 1/6", "P(A ∪ B)"],
+                difficulty=2,
+                keywords=["chance", "aléatoire", "fréquence", "événement", "mesure"]
+            ),
+            "matrice": MathConcept(
+                name="Matrice",
+                definition="Une matrice est un tableau rectangulaire de nombres organisés en lignes et en colonnes.",
+                category="Algèbre Linéaire",
+                related_concepts=["déterminant", "vecteur", "système", "transformation", "inverse"],
+                examples=["[[1,2],[3,4]]", "matrice identité", "matrice nulle"],
+                difficulty=3,
+                keywords=["tableau", "lignes", "colonnes", "linéaire", "transformation"]
+            ),
+            "limite": MathConcept(
+                name="Limite",
+                definition="La limite d'une fonction en un point décrit le comportement de la fonction lorsque la variable s'approche de ce point.",
+                category="Analyse",
+                related_concepts=["fonction", "continuité", "asymptote", "infiniment petit", "dérivée"],
+                examples=["lim(x→0) sin(x)/x = 1", "lim(x→∞) 1/x = 0"],
+                difficulty=3,
+                keywords=["approche", "tendance", "infini", "comportement", "voisinage"]
+            ),
+            "intégrale": MathConcept(
+                name="Intégrale",
+                definition="L'intégrale mesure l'aire sous une courbe. C'est l'opération inverse de la dérivée.",
+                category="Analyse",
+                related_concepts=["dérivée", "aire", "primitive", "fonction", "somme"],
+                examples=["∫x² dx = x³/3 + C", "∫sin(x) dx = -cos(x) + C"],
+                difficulty=3,
+                keywords=["aire", "primitive", "accumulation", "somme", "antidérivée"]
+            ),
+            "vecteur": MathConcept(
+                name="Vecteur",
+                definition="Un vecteur est un objet mathématique caractérisé par une direction et une norme (longueur).",
+                category="Algèbre Linéaire",
+                related_concepts=["matrice", "norme", "produit scalaire", "base", "espace"],
+                examples=["(3, 4)", "(1, 0, 0)", "vecteur vitesse"],
+                difficulty=2,
+                keywords=["direction", "norme", "composante", "flèche", "espace"]
+            ),
+            "équation": MathConcept(
+                name="Équation",
+                definition="Une équation est une égalité contenant une ou plusieurs inconnues à déterminer.",
+                category="Algèbre",
+                related_concepts=["inconnue", "solution", "système", "racine", "identité"],
+                examples=["2x + 3 = 7", "x² - 5x + 6 = 0", "sin(x) = 0.5"],
+                difficulty=1,
+                keywords=["égalité", "inconnue", "résolution", "solution", "racine"]
+            ),
+            "ensemble": MathConcept(
+                name="Ensemble",
+                definition="Un ensemble est une collection d'objets mathématiques distincts, appelés éléments.",
+                category="Fondements",
+                related_concepts=["élément", "sous-ensemble", "union", "intersection", "cardinal"],
+                examples=["ℕ (nombres naturels)", "{1, 2, 3}", "ensemble vide ∅"],
+                difficulty=1,
+                keywords=["collection", "élément", "appartenance", "inclusion", "cardinal"]
             )
-        ]
+        }
     
-    def _initialize_badges(self):
-        """Initialise le système de badges"""
-        return [
-            GameElement("Premier Pas", "Résoudre votre premier problème", "🎯", "problems_solved >= 1", 5),
-            GameElement("Résolveur", "Résoudre 10 problèmes", "⚡", "problems_solved >= 10", 25),
-            GameElement("Expert", "Résoudre 50 problèmes", "🏆", "problems_solved >= 50", 100),
-            GameElement("Visualisateur", "Générer votre premier graphique", "📊", "graphs_generated >= 1", 10),
-            GameElement("Série", "Résoudre 5 problèmes d'affilée", "🔥", "streak >= 5", 20),
-            GameElement("Polyvalent", "Explorer 3 catégories différentes", "🎨", "len(favorite_topics) >= 3", 30)
-        ]
-    
-    def process_mathematical_query(self, query: str, show_steps: bool = True) -> Dict:
-        """Traite une requête mathématique avec IA et visualisation"""
-        start_time = time.time()
-        
+    def explore_concept(self, query: str) -> Dict:
+        """Explore un concept mathématique"""
         try:
-            # Analyser la requête avec Mistral
-            ai_response = self._get_ai_analysis(query)
+            # Nettoyer la requête
+            query_clean = query.lower().strip()
             
-            # Extraire les expressions mathématiques
-            expressions = self._extract_math_expressions(ai_response)
+            # Recherche exacte
+            if query_clean in self.concept_database:
+                concept = self.concept_database[query_clean]
+                ai_explanation = self._get_ai_explanation(concept)
+                
+                self.exploration_history.append(query_clean)
+                
+                return {
+                    'success': True,
+                    'concept': {
+                        'name': concept.name,
+                        'definition': concept.definition,
+                        'category': concept.category,
+                        'related_concepts': concept.related_concepts,
+                        'examples': concept.examples,
+                        'difficulty': concept.difficulty,
+                        'difficulty_text': self._get_difficulty_text(concept.difficulty)
+                    },
+                    'ai_explanation': ai_explanation,
+                    'found_in_database': True
+                }
             
-            # Générer une visualisation si pertinente
-            graph_data = None
-            if self._needs_visualization(query, expressions):
-                graph_data = self._generate_graph(expressions, query)
-                if graph_data:
-                    self.stats['graphs_generated'] += 1
-                    self._check_badge_progress()
+            # Recherche par mots-clés
+            matches = self._search_by_keywords(query_clean)
+            if matches:
+                best_match = matches[0]
+                concept = self.concept_database[best_match]
+                ai_explanation = self._get_ai_explanation(concept)
+                
+                return {
+                    'success': True,
+                    'concept': {
+                        'name': concept.name,
+                        'definition': concept.definition,
+                        'category': concept.category,
+                        'related_concepts': concept.related_concepts,
+                        'examples': concept.examples,
+                        'difficulty': concept.difficulty,
+                        'difficulty_text': self._get_difficulty_text(concept.difficulty)
+                    },
+                    'ai_explanation': ai_explanation,
+                    'found_in_database': True,
+                    'search_hint': f"Concept trouvé via recherche: {best_match}"
+                }
             
-            # Résoudre étape par étape si demandé
-            steps = []
-            if show_steps and expressions:
-                steps = self._solve_step_by_step(expressions[0])
-            
-            # Mise à jour des statistiques
-            self.stats['total_interactions'] += 1
-            processing_time = time.time() - start_time
+            # Si pas dans la base, utiliser l'IA
+            ai_response = self._get_ai_concept_explanation(query)
             
             return {
                 'success': True,
-                'response': ai_response,
-                'expressions': expressions,
-                'solution_steps': steps,
-                'graph': graph_data,
-                'processing_time': processing_time,
-                'user_level': self.user_profile.level,
-                'user_xp': self.user_profile.xp,
-                'new_badges': self._check_badge_progress()
+                'concept': {
+                    'name': query.title(),
+                    'definition': 'Concept généré par IA',
+                    'category': 'Général',
+                    'related_concepts': [],
+                    'examples': [],
+                    'difficulty': 0,
+                    'difficulty_text': 'Variable'
+                },
+                'ai_explanation': ai_response,
+                'found_in_database': False
             }
             
         except Exception as e:
-            logger.error(f"Error processing query: {e}")
+            logger.error(f"Error exploring concept: {e}")
             return {
                 'success': False,
                 'error': str(e),
-                'response': 'Désolé, une erreur est survenue. Pouvez-vous reformuler votre question ?'
+                'message': 'Erreur lors de l\'exploration du concept'
             }
     
-    def _get_ai_analysis(self, query: str) -> str:
-        """Obtient une analyse IA de la requête"""
+    def _search_by_keywords(self, query: str) -> List[str]:
+        """Recherche par mots-clés"""
+        matches = []
+        query_words = set(query.split())
+        
+        for concept_name, concept in self.concept_database.items():
+            # Recherche dans le nom
+            if query in concept_name:
+                matches.append(concept_name)
+                continue
+            
+            # Recherche dans les mots-clés
+            keyword_matches = sum(1 for keyword in concept.keywords if keyword in query or query in keyword)
+            if keyword_matches > 0:
+                matches.append(concept_name)
+        
+        return matches
+    
+    def _get_difficulty_text(self, difficulty: int) -> str:
+        """Convertit le niveau de difficulté en texte"""
+        levels = {
+            1: "Débutant",
+            2: "Intermédiaire",
+            3: "Avancé",
+            4: "Expert",
+            5: "Maître"
+        }
+        return levels.get(difficulty, "Inconnu")
+    
+    def _get_ai_explanation(self, concept: MathConcept) -> str:
+        """Obtient une explication IA enrichie pour un concept"""
         try:
             client = self.get_mistral_client()
             
-            system_prompt = """Tu es Mathia, un assistant mathématique expert et bienveillant. 
+            prompt = f"""Tu es Mathia, un expert mathématique pédagogue.
 
-RÈGLES IMPORTANTES:
-- Explications claires et pédagogiques
-- Détecte si une visualisation serait utile
-- Structure tes réponses de façon logique
-- Adapte ton niveau à la difficulté de la question
-- Encourage l'apprentissage
+Explique le concept de "{concept.name}" de manière claire et engageante.
 
-Format de réponse souhaité:
-1. Explication du concept
-2. Résolution détaillée si applicable
-3. Applications pratiques ou exemples
-4. Suggestions pour approfondir
+Contexte:
+- Définition: {concept.definition}
+- Catégorie: {concept.category}
+- Exemples: {', '.join(concept.examples)}
 
-N'utilise pas d'astérisques pour la mise en forme."""
+Ta réponse doit:
+1. Donner une explication intuitive (2-3 phrases)
+2. Expliquer pourquoi c'est important
+3. Donner un conseil pour mieux comprendre
+4. Être accessible et motivante
 
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
-            ]
-            
+Reste concis (maximum 150 mots) et évite le jargon technique excessif."""
+
             response = client.chat.complete(
                 model="mistral-large-latest",
-                messages=messages,
-                temperature=0.3,
-                max_tokens=1500
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=300
             )
             
             return response.choices[0].message.content.strip()
             
         except Exception as e:
-            logger.error(f"AI analysis error: {e}")
-            return f"Je peux vous aider avec cette question mathématique: {query}"
+            logger.error(f"AI explanation error: {e}")
+            return f"Le concept de {concept.name} est fondamental en mathématiques. {concept.definition}"
     
-    def _extract_math_expressions(self, text: str) -> List[str]:
-        """Extrait les expressions mathématiques du texte"""
-        expressions = []
-        
-        # Patterns pour détecter les expressions mathématiques
-        patterns = [
-            r'f\([x-z]\)\s*=\s*([^.,\n]+)',  # f(x) = ...
-            r'([x-z][\^²³⁴⁵]*[\+\-\*/][^.,\n]+)',  # expressions algébriques
-            r'(sin\([^)]+\)|cos\([^)]+\)|tan\([^)]+\))',  # fonctions trigonométriques
-            r'(e\^[^,\n]+|exp\([^)]+\))',  # exponentielles
-            r'(ln\([^)]+\)|log\([^)]+\))',  # logarithmes
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            expressions.extend([match for match in matches if len(match.strip()) > 2])
-        
-        # Nettoyer et valider les expressions
-        clean_expressions = []
-        for expr in expressions[:3]:  # Maximum 3 expressions
-            try:
-                cleaned = self._clean_expression(expr)
-                # Test avec sympy
-                sympify(cleaned, evaluate=False)
-                clean_expressions.append(cleaned)
-            except:
-                continue
-        
-        return clean_expressions
-    
-    def _clean_expression(self, expr: str) -> str:
-        """Nettoie une expression mathématique"""
-        expr = expr.strip()
-        
-        replacements = [
-            (r'\^', '**'),
-            (r'ln\s*\(', 'log('),
-            (r'\be\b', 'E'),
-            (r'pi\b', 'pi'),
-            (r'²', '**2'),
-            (r'³', '**3'),
-            (r'⁴', '**4'),
-            (r'⁵', '**5')
-        ]
-        
-        for pattern, replacement in replacements:
-            expr = re.sub(pattern, replacement, expr)
-        
-        return expr
-    
-    def _needs_visualization(self, query: str, expressions: List[str]) -> bool:
-        """Détermine si une visualisation est nécessaire"""
-        visual_keywords = [
-            'graphique', 'courbe', 'trace', 'plot', 'visualise',
-            'fonction', 'parabole', 'droite', 'surface',
-            'compare', 'évolution', 'analyse'
-        ]
-        
-        query_lower = query.lower()
-        has_visual_keyword = any(keyword in query_lower for keyword in visual_keywords)
-        has_expressions = len(expressions) > 0
-        
-        return has_visual_keyword or has_expressions
-    
-    def _generate_graph(self, expressions: List[str], context: str = "") -> Optional[str]:
-        """Génère un graphique basé sur les expressions"""
-        if not expressions:
-            return None
-            
+    def _get_ai_concept_explanation(self, query: str) -> str:
+        """Obtient une explication IA pour un concept non répertorié"""
         try:
-            fig, ax = plt.subplots(figsize=(12, 8), facecolor='#0f0f23')
-            ax.set_facecolor('#1a1a3a')
+            client = self.get_mistral_client()
             
-            x = symbols('x')
-            x_vals = np.linspace(-10, 10, 1000)
-            colors = ['#00d4ff', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4']
+            prompt = f"""Tu es Mathia, un expert mathématique pédagogue.
+
+Un utilisateur cherche à comprendre: "{query}"
+
+Fournis une explication claire et structurée:
+1. Définition simple (2-3 phrases)
+2. Exemples concrets
+3. Concepts liés
+4. Application pratique
+
+Reste pédagogique et accessible. Maximum 200 mots."""
+
+            response = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=400
+            )
             
-            plotted = False
-            for i, expr_str in enumerate(expressions[:3]):
-                try:
-                    expr = sympify(expr_str)
-                    f = lambdify(x, expr, 'numpy')
-                    
-                    y_vals = f(x_vals)
-                    
-                    # Filtrer les valeurs infinies ou NaN
-                    mask = np.isfinite(y_vals)
-                    if not np.any(mask):
-                        continue
-                    
-                    x_clean = x_vals[mask]
-                    y_clean = y_vals[mask]
-                    
-                    color = colors[i % len(colors)]
-                    
-                    # Plot principal avec effet lumineux
-                    ax.plot(x_clean, y_clean, color=color, linewidth=4, 
-                           label=f'f(x) = {expr}', alpha=0.9, zorder=2)
-                    
-                    # Effet d'ombre
-                    ax.plot(x_clean, y_clean, color=color, linewidth=8, 
-                           alpha=0.3, zorder=1)
-                    
-                    # Points remarquables
-                    try:
-                        derivative = diff(expr, x)
-                        critical_points = solve(derivative, x)
-                        
-                        for cp in critical_points[:2]:
-                            if cp.is_real:
-                                cp_val = float(cp.evalf())
-                                if -10 <= cp_val <= 10:
-                                    y_cp = float(expr.subs(x, cp).evalf())
-                                    if abs(y_cp) < 100:  # Éviter les valeurs trop grandes
-                                        ax.plot(cp_val, y_cp, 'o', color=color, 
-                                               markersize=10, markeredgewidth=3, 
-                                               markeredgecolor='white', zorder=3)
-                    except:
-                        pass
-                    
-                    plotted = True
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to plot {expr_str}: {e}")
-                    continue
-            
-            if not plotted:
-                # Graphique par défaut
-                y_default = np.sin(x_vals) * np.exp(-x_vals**2/50)
-                ax.plot(x_vals, y_default, color='#00d4ff', linewidth=4, 
-                       label='Exemple: f(x)', alpha=0.9)
-                plotted = True
-            
-            # Styling moderne
-            ax.grid(True, alpha=0.3, color='white', linestyle='-', linewidth=0.5)
-            ax.axhline(y=0, color='#ffffff', linewidth=2, alpha=0.8)
-            ax.axvline(x=0, color='#ffffff', linewidth=2, alpha=0.8)
-            
-            ax.set_xlabel('x', fontsize=16, color='white', fontweight='bold')
-            ax.set_ylabel('f(x)', fontsize=16, color='white', fontweight='bold')
-            ax.set_title('Mathia - Analyse Graphique', fontsize=18, 
-                        color='#00d4ff', fontweight='bold', pad=20)
-            
-            # Légende moderne
-            if plotted:
-                legend = ax.legend(loc='best', frameon=True, fancybox=True, shadow=True)
-                legend.get_frame().set_facecolor('#2a2a4a')
-                legend.get_frame().set_edgecolor('#00d4ff')
-                legend.get_frame().set_alpha(0.9)
-                for text in legend.get_texts():
-                    text.set_color('white')
-            
-            # Bordures
-            for spine in ax.spines.values():
-                spine.set_color('#555577')
-                spine.set_linewidth(2)
-            
-            ax.tick_params(colors='white', labelsize=12)
-            
-            plt.tight_layout()
-            
-            # Sauvegarde en base64
-            buffer = io.BytesIO()
-            plt.savefig(buffer, format='png', bbox_inches='tight', 
-                       facecolor='#0f0f23', edgecolor='none', dpi=100)
-            buffer.seek(0)
-            image_base64 = base64.b64encode(buffer.getvalue()).decode()
-            plt.close()
-            
-            return image_base64
+            return response.choices[0].message.content.strip()
             
         except Exception as e:
-            logger.error(f"Graph generation error: {e}")
-            return None
+            logger.error(f"AI concept explanation error: {e}")
+            return f"Je recherche des informations sur '{query}'. Ce concept semble lié aux mathématiques, mais j'ai besoin de plus de contexte pour vous donner une explication détaillée."
     
-    def _solve_step_by_step(self, expression: str) -> List[str]:
-        """Résout une expression étape par étape"""
-        try:
-            x = symbols('x')
-            expr = sympify(expression)
-            
-            steps = []
-            steps.append(f"Expression initiale: {expr}")
-            
-            # Si c'est une équation (contient =), la résoudre
-            if '=' in expression:
-                sides = expression.split('=')
-                if len(sides) == 2:
-                    left = sympify(sides[0].strip())
-                    right = sympify(sides[1].strip())
-                    equation = Eq(left, right)
-                    
-                    steps.append(f"Équation: {equation}")
-                    
-                    solutions = solve(equation, x)
-                    if solutions:
-                        steps.append(f"Solution(s): {solutions}")
-                    else:
-                        steps.append("Pas de solution réelle trouvée")
-            
-            # Analyse de fonction
-            else:
-                # Dérivée
-                try:
-                    derivative = diff(expr, x)
-                    steps.append(f"Dérivée: f'(x) = {derivative}")
-                    
-                    # Points critiques
-                    critical_points = solve(derivative, x)
-                    if critical_points:
-                        steps.append(f"Points critiques: {critical_points}")
-                except:
-                    pass
-                
-                # Limites
-                try:
-                    limit_inf = limit(expr, x, oo)
-                    limit_neg_inf = limit(expr, x, -oo)
-                    if limit_inf != oo and limit_inf != -oo:
-                        steps.append(f"Limite en +∞: {limit_inf}")
-                    if limit_neg_inf != oo and limit_neg_inf != -oo:
-                        steps.append(f"Limite en -∞: {limit_neg_inf}")
-                except:
-                    pass
-            
-            return steps[:5]  # Maximum 5 étapes
-            
-        except Exception as e:
-            logger.error(f"Step-by-step error: {e}")
-            return [f"Analyse de: {expression}"]
+    def get_all_concepts(self) -> List[Dict]:
+        """Retourne tous les concepts disponibles"""
+        return [
+            {
+                'name': concept.name,
+                'category': concept.category,
+                'difficulty': concept.difficulty,
+                'difficulty_text': self._get_difficulty_text(concept.difficulty)
+            }
+            for concept in self.concept_database.values()
+        ]
     
-    def get_practice_problem(self, category: str = None, difficulty: int = None) -> Dict:
-        """Obtient un problème d'entraînement"""
-        available_problems = self.problem_bank
-        
-        if category:
-            available_problems = [p for p in available_problems if p.category == category]
-        
-        if difficulty:
-            available_problems = [p for p in available_problems if p.difficulty == difficulty]
-        
-        if not available_problems:
-            available_problems = self.problem_bank
-        
-        problem = random.choice(available_problems)
-        
-        return {
-            'id': problem.id,
-            'title': problem.title,
-            'description': problem.description,
-            'category': problem.category,
-            'difficulty': problem.difficulty,
-            'hints': problem.hints,
-            'xp_reward': problem.xp_reward
-        }
-    
-    def submit_solution(self, problem_id: str, user_answer: str) -> Dict:
-        """Vérifie une solution soumise"""
-        problem = next((p for p in self.problem_bank if p.id == problem_id), None)
-        
-        if not problem:
-            return {'success': False, 'message': 'Problème non trouvé'}
-        
-        # Comparaison simple (peut être améliorée)
-        is_correct = self._compare_answers(problem.answer, user_answer)
-        
-        result = {
-            'correct': is_correct,
-            'expected_answer': problem.answer,
-            'solution_steps': problem.solution_steps,
-            'xp_earned': 0,
-            'level_up': False,
-            'new_badges': []
-        }
-        
-        if is_correct:
-            # Récompenses
-            self.user_profile.xp += problem.xp_reward
-            self.user_profile.problems_solved += 1
-            self.user_profile.streak += 1
-            result['xp_earned'] = problem.xp_reward
-            
-            # Vérifier level up
-            new_level = self._calculate_level(self.user_profile.xp)
-            if new_level > self.user_profile.level:
-                self.user_profile.level = new_level
-                result['level_up'] = True
-            
-            # Vérifier nouveaux badges
-            result['new_badges'] = self._check_badge_progress()
-            
-            self.stats['problems_solved'] += 1
-        else:
-            self.user_profile.streak = 0
-        
-        return result
-    
-    def _compare_answers(self, expected: str, user_answer: str) -> bool:
-        """Compare deux réponses mathématiques"""
-        try:
-            # Nettoyer les réponses
-            expected_clean = expected.replace(' ', '').lower()
-            user_clean = user_answer.replace(' ', '').lower()
-            
-            # Comparaison directe
-            if expected_clean == user_clean:
-                return True
-            
-            # Comparaison symbolique si possible
-            try:
-                expected_expr = sympify(expected)
-                user_expr = sympify(user_answer)
-                return simplify(expected_expr - user_expr) == 0
-            except:
-                pass
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"Answer comparison error: {e}")
-            return False
-    
-    def _calculate_level(self, xp: int) -> int:
-        """Calcule le niveau basé sur l'XP"""
-        # Progression: 100 XP pour niveau 2, puis +50 XP par niveau
-        if xp < 100:
-            return 1
-        return 2 + (xp - 100) // 50
-    
-    def _check_badge_progress(self) -> List[str]:
-        """Vérifie et attribue de nouveaux badges"""
-        new_badges = []
-        
-        for badge in self.badges:
-            if badge.name not in self.user_profile.badges:
-                # Évaluer la condition
-                try:
-                    condition_met = eval(badge.condition.replace('problems_solved', str(self.user_profile.problems_solved))
-                                       .replace('graphs_generated', str(self.stats['graphs_generated']))
-                                       .replace('streak', str(self.user_profile.streak))
-                                       .replace('len(favorite_topics)', str(len(self.user_profile.favorite_topics))))
-                    
-                    if condition_met:
-                        self.user_profile.badges.append(badge.name)
-                        self.user_profile.xp += badge.reward_xp
-                        new_badges.append({
-                            'name': badge.name,
-                            'description': badge.description,
-                            'icon': badge.icon,
-                            'xp_bonus': badge.reward_xp
-                        })
-                except:
-                    pass
-        
-        return new_badges
+    def get_concepts_by_category(self, category: str) -> List[Dict]:
+        """Retourne les concepts d'une catégorie"""
+        return [
+            {
+                'name': concept.name,
+                'category': concept.category,
+                'difficulty': concept.difficulty
+            }
+            for concept in self.concept_database.values()
+            if concept.category.lower() == category.lower()
+        ]
 
 # Instance globale
-mathia = MathiaCore()
+mathia = MathiaExplorer()
 
 @app.route('/')
 def index():
     """Interface principale de Mathia"""
     return render_template_string(MATHIA_TEMPLATE)
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    """API de chat principal"""
+@app.route('/api/explore', methods=['POST'])
+def explore():
+    """API d'exploration de concepts"""
     try:
         data = request.get_json()
-        message = data.get('message', '').strip()
-        show_steps = data.get('show_steps', True)
+        query = data.get('query', '').strip()
         
-        if not message:
-            return jsonify({'success': False, 'error': 'Message requis'})
+        if not query:
+            return jsonify({'success': False, 'error': 'Requête vide'})
         
-        result = mathia.process_mathematical_query(message, show_steps)
+        result = mathia.explore_concept(query)
         return jsonify(result)
         
     except Exception as e:
-        logger.error(f"Chat API error: {e}")
+        logger.error(f"Explore API error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/api/calculate', methods=['POST'])
-def calculate():
-    """API de calcul (alias pour chat pour compatibilité)"""
-    return chat()
-
-@app.route('/api/practice', methods=['GET'])
-def get_practice():
-    """Obtient un problème d'entraînement"""
+@app.route('/api/concepts', methods=['GET'])
+def get_concepts():
+    """Obtient la liste de tous les concepts"""
     try:
-        category = request.args.get('category')
-        difficulty = request.args.get('difficulty', type=int)
-        
-        problem = mathia.get_practice_problem(category, difficulty)
-        return jsonify(problem)
-        
+        concepts = mathia.get_all_concepts()
+        return jsonify({'success': True, 'concepts': concepts})
     except Exception as e:
-        logger.error(f"Practice API error: {e}")
-        return jsonify({'error': str(e)})
-
-@app.route('/api/submit', methods=['POST'])
-def submit():
-    """Soumet une solution pour vérification"""
-    try:
-        data = request.get_json()
-        problem_id = data.get('problem_id')
-        user_answer = data.get('answer', '')
-        
-        if not problem_id or not user_answer:
-            return jsonify({'success': False, 'error': 'Paramètres manquants'})
-        
-        result = mathia.submit_solution(problem_id, user_answer)
-        return jsonify(result)
-        
-    except Exception as e:
-        logger.error(f"Submit API error: {e}")
+        logger.error(f"Concepts API error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/api/profile', methods=['GET'])
-def get_profile():
-    """Obtient le profil utilisateur"""
+@app.route('/api/concepts/<category>', methods=['GET'])
+def get_concepts_by_category(category):
+    """Obtient les concepts d'une catégorie"""
     try:
-        return jsonify({
-            'level': mathia.user_profile.level,
-            'xp': mathia.user_profile.xp,
-            'badges': mathia.user_profile.badges,
-            'problems_solved': mathia.user_profile.problems_solved,
-            'streak': mathia.user_profile.streak,
-            'next_level_xp': 100 + (mathia.user_profile.level - 1) * 50 if mathia.user_profile.level > 1 else 100
-        })
+        concepts = mathia.get_concepts_by_category(category)
+        return jsonify({'success': True, 'concepts': concepts})
     except Exception as e:
-        logger.error(f"Profile API error: {e}")
-        return jsonify({'error': str(e)})
-
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    """Statistiques globales"""
-    return jsonify(mathia.stats)
+        logger.error(f"Category API error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/health')
 def health():
     """Health check"""
     return jsonify({
         'status': 'OK',
-        'service': 'Mathia',
-        'version': '2.0',
-        'features': ['gamification', 'ai_analysis', 'step_solving', 'visualization']
+        'service': 'Mathia Explorer',
+        'version': '3.0',
+        'concepts': len(mathia.concept_database)
     })
 
-# Template HTML principal avec design moderne et gamification
+# Template HTML avec design moderne
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mathia - Assistant Mathématique Gamifié</title>
+    <title>Mathia - Explorateur de Concepts Mathématiques</title>
     <style>
         * {
             margin: 0;
@@ -751,10 +432,11 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             background: var(--gradient-main);
             min-height: 100vh;
             color: var(--text-primary);
+            padding: 20px;
         }
         
         .back-link {
-            position: absolute;
+            position: fixed;
             top: 20px;
             left: 20px;
             background: rgba(255, 255, 255, 0.1);
@@ -772,17 +454,104 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         .back-link:hover {
             background: rgba(255, 255, 255, 0.2);
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
         }
         
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 80px 20px 20px;
+            padding: 80px 20px 40px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+        
+        .header h1 {
+            font-size: 3.5rem;
+            color: white;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 20px rgba(0,0,0,0.2);
+        }
+        
+        .header p {
+            color: rgba(255,255,255,0.9);
+            font-size: 1.3rem;
+        }
+        
+        .search-container {
+            max-width: 700px;
+            margin: 0 auto 40px;
+        }
+        
+        .search-box {
+            position: relative;
+        }
+        
+        .search-input {
+            width: 100%;
+            padding: 20px 60px 20px 25px;
+            border: none;
+            border-radius: 50px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 1.1rem;
+            box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
+            transition: all 0.3s ease;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
+        }
+        
+        .search-btn {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--gradient-main);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .search-btn:hover {
+            transform: translateY(-50%) scale(1.05);
+        }
+        
+        .suggestions {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .suggestion-tag {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .suggestion-tag:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+        
+        .content-area {
             display: grid;
             grid-template-columns: 300px 1fr;
             gap: 30px;
-            min-height: 100vh;
+            margin-top: 40px;
         }
         
         .sidebar {
@@ -790,457 +559,186 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             border-radius: 30px;
             padding: 30px;
             height: fit-content;
-            position: sticky;
-            top: 100px;
             box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
         }
         
-        .profile-card {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: var(--bg-primary);
-            border-radius: 20px;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .avatar {
-            width: 80px;
-            height: 80px;
-            background: var(--gradient-main);
-            border-radius: 50%;
-            margin: 0 auto 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2rem;
-            color: white;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .level-badge {
-            background: var(--gradient-main);
-            color: white;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 0.9rem;
-            margin: 10px 0;
-            display: inline-block;
-        }
-        
-        .xp-bar {
-            background: var(--bg-secondary);
-            height: 10px;
-            border-radius: 10px;
-            margin: 10px 0;
-            overflow: hidden;
-            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark);
-        }
-        
-        .xp-fill {
-            height: 100%;
-            background: var(--gradient-main);
-            border-radius: 10px;
-            transition: width 0.5s ease;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-bottom: 30px;
-        }
-        
-        .stat-card {
-            background: var(--bg-primary);
-            padding: 15px;
-            border-radius: 15px;
-            text-align: center;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .stat-value {
-            font-size: 1.8rem;
-            font-weight: bold;
+        .sidebar h3 {
             color: var(--accent);
-            display: block;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
         }
         
-        .stat-label {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            margin-top: 5px;
+        .concept-list {
+            list-style: none;
         }
         
-        .badges-section h3 {
-            color: var(--accent);
-            margin-bottom: 15px;
-            font-size: 1.2rem;
-        }
-        
-        .badges-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
-            gap: 10px;
-        }
-        
-        .badge {
+        .concept-item {
+            padding: 12px 15px;
+            margin-bottom: 10px;
             background: var(--bg-primary);
-            padding: 15px 10px;
             border-radius: 15px;
-            text-align: center;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-            transition: all 0.3s ease;
             cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 5px 5px 10px var(--shadow-light), -5px -5px 10px var(--shadow-dark);
         }
         
-        .badge.earned {
-            background: var(--gradient-main);
-            color: white;
-            transform: scale(1.05);
+        .concept-item:hover {
+            transform: translateX(5px);
+            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
         }
         
-        .badge:hover {
-            transform: translateY(-2px) scale(1.02);
-        }
-        
-        .badge-icon {
-            font-size: 1.5rem;
+        .concept-item .name {
+            font-weight: 600;
+            color: var(--text-primary);
+            display: block;
             margin-bottom: 5px;
         }
         
-        .badge-name {
-            font-size: 0.7rem;
-            font-weight: 600;
+        .concept-item .category {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
         }
         
         .main-content {
             background: var(--bg-primary);
             border-radius: 30px;
             padding: 40px;
+            min-height: 500px;
             box-shadow: 20px 20px 60px var(--shadow-light), -20px -20px 60px var(--shadow-dark);
-            display: flex;
-            flex-direction: column;
-            min-height: calc(100vh - 140px);
         }
         
-        .header {
+        .welcome-message {
             text-align: center;
-            margin-bottom: 40px;
-        }
-        
-        .header h1 {
-            font-size: 3rem;
-            background: var(--gradient-main);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 10px;
-        }
-        
-        .header p {
+            padding: 60px 20px;
             color: var(--text-secondary);
-            font-size: 1.2rem;
         }
         
-        .mode-selector {
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .mode-btn {
-            background: var(--bg-primary);
-            border: none;
-            padding: 15px 30px;
-            border-radius: 20px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-weight: 600;
-            color: var(--text-primary);
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .mode-btn.active {
-            background: var(--gradient-main);
-            color: white;
-            transform: translateY(-2px);
-            box-shadow: 12px 12px 20px var(--shadow-light), -12px -12px 20px var(--shadow-dark);
-        }
-        
-        .mode-btn:hover:not(.active) {
-            transform: translateY(-1px);
-        }
-        
-        .chat-section {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .messages {
-            flex: 1;
-            background: var(--bg-primary);
-            border-radius: 20px;
-            padding: 20px;
+        .welcome-message h2 {
+            color: var(--accent);
+            font-size: 2rem;
             margin-bottom: 20px;
-            max-height: 500px;
-            overflow-y: auto;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
         }
         
-        .message {
-            margin-bottom: 20px;
-            animation: slideIn 0.3s ease;
+        .concept-card {
+            animation: fadeIn 0.5s ease;
         }
         
-        @keyframes slideIn {
+        @keyframes fadeIn {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
         
-        .message.user {
-            text-align: right;
-        }
-        
-        .message.assistant {
-            text-align: left;
-        }
-        
-        .message-bubble {
-            display: inline-block;
-            max-width: 80%;
-            padding: 15px 20px;
-            border-radius: 20px;
-            word-wrap: break-word;
-        }
-        
-        .message.user .message-bubble {
-            background: var(--gradient-main);
-            color: white;
-            border-bottom-right-radius: 5px;
-        }
-        
-        .message.assistant .message-bubble {
-            background: var(--bg-tertiary);
-            border: 2px solid var(--bg-secondary);
-            border-bottom-left-radius: 5px;
-        }
-        
-        .message-steps {
-            background: var(--bg-tertiary);
-            border-radius: 15px;
-            padding: 15px;
-            margin: 10px 0;
-            border-left: 4px solid var(--accent);
-        }
-        
-        .step {
-            padding: 8px 0;
-            border-bottom: 1px solid var(--bg-secondary);
-        }
-        
-        .step:last-child {
-            border-bottom: none;
-        }
-        
-        .step-number {
-            background: var(--accent);
-            color: white;
-            width: 25px;
-            height: 25px;
-            border-radius: 50%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.8rem;
-            font-weight: bold;
-            margin-right: 10px;
-        }
-        
-        .graph-container {
-            background: var(--bg-tertiary);
-            border-radius: 15px;
-            padding: 20px;
-            margin: 15px 0;
-            text-align: center;
-            border: 2px solid var(--bg-secondary);
-        }
-        
-        .graph-container img {
-            max-width: 100%;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-        }
-        
-        .input-area {
-            display: flex;
-            gap: 15px;
-            align-items: flex-end;
-        }
-        
-        .input-group {
-            flex: 1;
-        }
-        
-        .input-field {
-            width: 100%;
-            padding: 15px 20px;
-            border: none;
-            border-radius: 20px;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            font-size: 1rem;
-            resize: vertical;
-            min-height: 60px;
-            box-shadow: inset 8px 8px 16px var(--shadow-light), inset -8px -8px 16px var(--shadow-dark);
-            transition: all 0.3s ease;
-        }
-        
-        .input-field:focus {
-            outline: none;
-            box-shadow: inset 4px 4px 8px var(--shadow-light), inset -4px -4px 8px var(--shadow-dark), 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        
-        .input-field::placeholder {
-            color: var(--text-secondary);
-        }
-        
-        .send-btn {
-            background: var(--gradient-main);
-            border: none;
-            color: white;
-            padding: 15px 25px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-            white-space: nowrap;
-        }
-        
-        .send-btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 12px 12px 20px var(--shadow-light), -12px -12px 20px var(--shadow-dark);
-        }
-        
-        .send-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .practice-section {
-            display: none;
-        }
-        
-        .practice-section.active {
-            display: block;
-        }
-        
-        .problem-card {
-            background: var(--bg-primary);
-            border-radius: 20px;
-            padding: 30px;
+        .concept-header {
+            border-bottom: 3px solid var(--accent);
+            padding-bottom: 20px;
             margin-bottom: 30px;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
         }
         
-        .problem-header {
-            display: flex;
-            justify-content: between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        
-        .problem-title {
-            font-size: 1.5rem;
+        .concept-title {
+            font-size: 2.5rem;
             color: var(--accent);
             margin-bottom: 10px;
         }
         
-        .difficulty-stars {
+        .concept-meta {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .meta-tag {
+            background: var(--bg-secondary);
+            padding: 8px 16px;
+            border-radius: 15px;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+        
+        .concept-section {
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            font-size: 1.3rem;
+            color: var(--accent);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .section-content {
+            background: var(--bg-tertiary);
+            padding: 20px;
+            border-radius: 15px;
+            line-height: 1.8;
+            border-left: 4px solid var(--accent);
+        }
+        
+        .examples-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .example-card {
+            background: var(--bg-tertiary);
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+            font-family: "Courier New", monospace;
+            color: var(--text-primary);
+            border: 2px solid var(--bg-secondary);
+        }
+        
+        .related-concepts {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .related-tag {
+            background: var(--gradient-main);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        
+        .related-tag:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .difficulty-indicator {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        
+        .difficulty-star {
             color: var(--warning);
             font-size: 1.2rem;
         }
         
-        .problem-description {
-            font-size: 1.1rem;
-            line-height: 1.6;
-            margin-bottom: 25px;
-            background: var(--bg-tertiary);
-            padding: 20px;
-            border-radius: 15px;
-            border-left: 4px solid var(--accent);
+        .difficulty-star.empty {
+            color: var(--bg-secondary);
         }
         
-        .hint-section {
-            margin: 20px 0;
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--accent);
+            animation: spin 1s ease-in-out infinite;
         }
         
-        .hint-btn {
-            background: var(--bg-secondary);
-            border: none;
-            padding: 10px 20px;
-            border-radius: 15px;
-            cursor: pointer;
-            color: var(--text-primary);
-            margin-bottom: 10px;
-            transition: all 0.3s ease;
-        }
-        
-        .hint-btn:hover {
-            background: var(--accent);
-            color: white;
-        }
-        
-        .hint-content {
-            background: var(--bg-tertiary);
-            padding: 15px;
-            border-radius: 10px;
-            margin-top: 10px;
-            display: none;
-            border-left: 3px solid var(--warning);
-        }
-        
-        .solution-input {
-            display: flex;
-            gap: 15px;
-            margin-top: 20px;
-        }
-        
-        .submit-btn {
-            background: var(--success);
-            color: white;
-            border: none;
-            padding: 12px 25px;
-            border-radius: 15px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        
-        .submit-btn:hover {
-            background: #00b894;
-            transform: translateY(-1px);
-        }
-        
-        .result-card {
-            margin-top: 20px;
-            padding: 20px;
-            border-radius: 15px;
-            display: none;
-        }
-        
-        .result-card.correct {
-            background: rgba(0, 208, 156, 0.1);
-            border: 2px solid var(--success);
-        }
-        
-        .result-card.incorrect {
-            background: rgba(231, 76, 60, 0.1);
-            border: 2px solid var(--error);
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
         
         .notification {
@@ -1254,130 +752,32 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             transform: translateX(400px);
             transition: transform 0.3s ease;
             z-index: 1000;
-            max-width: 350px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
         }
         
         .notification.show {
             transform: translateX(0);
         }
         
-        .notification.success {
-            background: var(--success);
-        }
+        .notification.success { background: var(--success); }
+        .notification.error { background: var(--error); }
+        .notification.info { background: var(--accent); }
         
-        .notification.error {
-            background: var(--error);
-        }
-        
-        .notification.warning {
-            background: var(--warning);
-        }
-        
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s ease-in-out infinite;
-            margin-right: 10px;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .examples-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        
-        .example-card {
-            background: var(--bg-primary);
-            padding: 20px;
-            border-radius: 15px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 8px 8px 16px var(--shadow-light), -8px -8px 16px var(--shadow-dark);
-        }
-        
-        .example-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 12px 12px 24px var(--shadow-light), -12px -12px 24px var(--shadow-dark);
-        }
-        
-        .example-title {
-            font-weight: 600;
-            color: var(--accent);
-            margin-bottom: 10px;
-        }
-        
-        .example-desc {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
-        
-        /* Responsive Design */
         @media (max-width: 968px) {
-            .container {
+            .content-area {
                 grid-template-columns: 1fr;
-                gap: 20px;
-                padding: 20px;
             }
             
             .sidebar {
-                position: static;
                 order: 2;
             }
             
             .main-content {
                 order: 1;
-                min-height: auto;
             }
             
             .header h1 {
-                font-size: 2rem;
-            }
-            
-            .mode-selector {
-                flex-wrap: wrap;
-                gap: 10px;
-            }
-            
-            .mode-btn {
-                padding: 12px 20px;
-                font-size: 0.9rem;
-            }
-        }
-        
-        @media (max-width: 768px) {
-            .container {
-                padding: 10px;
-            }
-            
-            .main-content, .sidebar {
-                padding: 20px;
-                border-radius: 20px;
-            }
-            
-            .input-area {
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .send-btn {
-                align-self: stretch;
-            }
-            
-            .examples-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .stats-grid {
-                grid-template-columns: 1fr;
+                font-size: 2.5rem;
             }
         }
     </style>
@@ -1386,442 +786,232 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
     <a href="/" class="back-link">← Retour au Hub</a>
     
     <div class="container">
-        <!-- Sidebar avec profil et gamification -->
-        <div class="sidebar">
-            <div class="profile-card">
-                <div class="avatar" id="userAvatar">🤖</div>
-                <div class="level-badge" id="userLevel">Niveau 1</div>
-                <div class="xp-bar">
-                    <div class="xp-fill" id="xpFill" style="width: 0%"></div>
-                </div>
-                <div style="font-size: 0.8rem; color: var(--text-secondary);" id="xpText">0 / 100 XP</div>
+        <div class="header">
+            <h1>🔢 Mathia</h1>
+            <p>Explorateur Interactif de Concepts Mathématiques</p>
+        </div>
+        
+        <div class="search-container">
+            <div class="search-box">
+                <input type="text" 
+                       id="searchInput" 
+                       class="search-input" 
+                       placeholder="Quel concept voulez-vous explorer ? (ex: fonction, probabilité...)"
+                       onkeypress="if(event.key==='Enter') exploreConcept()">
+                <button class="search-btn" onclick="exploreConcept()">Explorer</button>
             </div>
             
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <span class="stat-value" id="problemsSolved">0</span>
-                    <div class="stat-label">Problèmes</div>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-value" id="currentStreak">0</span>
-                    <div class="stat-label">Série</div>
-                </div>
-            </div>
-            
-            <div class="badges-section">
-                <h3>Badges</h3>
-                <div class="badges-grid" id="badgesContainer">
-                    <div class="badge">
-                        <div class="badge-icon">🎯</div>
-                        <div class="badge-name">Premier Pas</div>
-                    </div>
-                    <div class="badge">
-                        <div class="badge-icon">⚡</div>
-                        <div class="badge-name">Résolveur</div>
-                    </div>
-                    <div class="badge">
-                        <div class="badge-icon">🏆</div>
-                        <div class="badge-name">Expert</div>
-                    </div>
-                    <div class="badge">
-                        <div class="badge-icon">📊</div>
-                        <div class="badge-name">Visualisateur</div>
-                    </div>
-                    <div class="badge">
-                        <div class="badge-icon">🔥</div>
-                        <div class="badge-name">Série</div>
-                    </div>
-                    <div class="badge">
-                        <div class="badge-icon">🎨</div>
-                        <div class="badge-name">Polyvalent</div>
-                    </div>
-                </div>
+            <div class="suggestions">
+                <span class="suggestion-tag" onclick="quickExplore('fonction')">Fonction</span>
+                <span class="suggestion-tag" onclick="quickExplore('dérivée')">Dérivée</span>
+                <span class="suggestion-tag" onclick="quickExplore('probabilité')">Probabilité</span>
+                <span class="suggestion-tag" onclick="quickExplore('vecteur')">Vecteur</span>
+                <span class="suggestion-tag" onclick="quickExplore('matrice')">Matrice</span>
+                <span class="suggestion-tag" onclick="quickExplore('nombre complexe')">Nombre Complexe</span>
             </div>
         </div>
         
-        <!-- Contenu principal -->
-        <div class="main-content">
-            <div class="header">
-                <h1>Mathia</h1>
-                <p>Votre assistant mathématique personnel et gamifié</p>
+        <div class="content-area">
+            <div class="sidebar">
+                <h3>📚 Concepts Disponibles</h3>
+                <ul class="concept-list" id="conceptList">
+                    <li class="concept-item" onclick="quickExplore('fonction')">
+                        <span class="name">Fonction</span>
+                        <span class="category">Analyse</span>
+                    </li>
+                    <li class="concept-item" onclick="quickExplore('dérivée')">
+                        <span class="name">Dérivée</span>
+                        <span class="category">Analyse</span>
+                    </li>
+                    <li class="concept-item" onclick="quickExplore('intégrale')">
+                        <span class="name">Intégrale</span>
+                        <span class="category">Analyse</span>
+                    </li>
+                    <li class="concept-item" onclick="quickExplore('limite')">
+                        <span class="name">Limite</span>
+                        <span class="category">Analyse</span>
+                    </li>
+                    <li class="concept-item" onclick="quickExplore('nombre complexe')">
+                        <span class="name">Nombre Complexe</span>
+                        <span class="category">Algèbre</span>
+                    </li>
+                    <li class="concept-item" onclick="quickExplore('matrice')">
+                        <span class="name">Matrice</span>
+                        <span class="category">Algèbre Linéaire</span>
+                    </li>
+                    <li class="concept-item" onclick="quickExplore('vecteur')">
+                        <span class="name">Vecteur</span>
+                        <span class="category">Algèbre Linéaire</span>
+                    </li>
+                    <li class="concept-item" onclick="quickExplore('probabilité')">
+                        <span class="name">Probabilité</span>
+                        <span class="category">Statistiques</span>
+                    </li>
+                    <li class="concept-item" onclick="quickExplore('équation')">
+                        <span class="name">Équation</span>
+                        <span class="category">Algèbre</span>
+                    </li>
+                    <li class="concept-item" onclick="quickExplore('ensemble')">
+                        <span class="name">Ensemble</span>
+                        <span class="category">Fondements</span>
+                    </li>
+                </ul>
             </div>
             
-            <!-- Sélecteur de mode -->
-            <div class="mode-selector">
-                <button class="mode-btn active" onclick="switchMode('chat')">💬 Chat Libre</button>
-                <button class="mode-btn" onclick="switchMode('practice')">🎯 Entraînement</button>
-            </div>
-            
-            <!-- Section Chat -->
-            <div class="chat-section" id="chatSection">
-                <div class="messages" id="messages">
-                    <div class="message assistant">
-                        <div class="message-bubble">
-                            Salut ! Je suis Mathia, votre assistant mathématique gamifié. Posez-moi vos questions ou choisissez un problème d'entraînement pour gagner de l'XP et débloquer des badges !
-                        </div>
-                    </div>
-                    
-                    <!-- Exemples interactifs -->
-                    <div class="examples-grid">
-                        <div class="example-card" onclick="useExample('Résous l\'équation 2x + 5 = 13')">
-                            <div class="example-title">Équation Simple</div>
-                            <div class="example-desc">2x + 5 = 13</div>
-                        </div>
-                        <div class="example-card" onclick="useExample('Trace la fonction f(x) = x² - 4x + 3')">
-                            <div class="example-title">Fonction Quadratique</div>
-                            <div class="example-desc">f(x) = x² - 4x + 3</div>
-                        </div>
-                        <div class="example-card" onclick="useExample('Calcule la dérivée de x³ + 2x² - 5x')">
-                            <div class="example-title">Dérivée</div>
-                            <div class="example-desc">d/dx(x³ + 2x² - 5x)</div>
-                        </div>
-                        <div class="example-card" onclick="useExample('Analyse les limites de ln(x) quand x tend vers 0')">
-                            <div class="example-title">Limites</div>
-                            <div class="example-desc">lim(x→0) ln(x)</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="input-area">
-                    <div class="input-group">
-                        <textarea id="messageInput" class="input-field" 
-                                placeholder="Posez votre question mathématique... (ex: 'Résous 3x + 7 = 22' ou 'Trace f(x) = sin(x)')"
-                                rows="3" onkeypress="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
-                    </div>
-                    <button id="sendBtn" class="send-btn" onclick="sendMessage()">Envoyer</button>
-                </div>
-            </div>
-            
-            <!-- Section Entraînement -->
-            <div class="practice-section" id="practiceSection">
-                <div id="problemContainer">
-                    <div class="problem-card">
-                        <div class="problem-header">
-                            <div>
-                                <h3 class="problem-title" id="problemTitle">Chargement...</h3>
-                                <div class="difficulty-stars" id="problemDifficulty"></div>
-                            </div>
-                            <button class="mode-btn" onclick="loadNewProblem()">Nouveau Problème</button>
-                        </div>
-                        <div class="problem-description" id="problemDescription">
-                            Chargement du problème...
-                        </div>
-                        
-                        <div class="hint-section" id="hintSection" style="display: none;">
-                            <button class="hint-btn" onclick="showHint()">💡 Voir un indice</button>
-                            <div class="hint-content" id="hintContent"></div>
-                        </div>
-                        
-                        <div class="solution-input">
-                            <input type="text" id="answerInput" class="input-field" 
-                                   placeholder="Votre réponse..." style="min-height: auto;"
-                                   onkeypress="if(event.key==='Enter'){submitAnswer();}">
-                            <button onclick="submitAnswer()" class="submit-btn">Vérifier</button>
-                        </div>
-                        
-                        <div class="result-card" id="resultCard">
-                            <div id="resultContent"></div>
-                        </div>
-                    </div>
+            <div class="main-content" id="mainContent">
+                <div class="welcome-message">
+                    <h2>👋 Bienvenue dans Mathia !</h2>
+                    <p>Explorez les concepts mathématiques de manière interactive.</p>
+                    <p>Tapez un concept dans la barre de recherche ou cliquez sur un concept dans la liste.</p>
+                    <p style="margin-top: 30px; font-size: 1.5rem;">🔍</p>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Test immédiat pour vérifier que le JavaScript s'exécute
-        console.log('🚀 Mathia JavaScript chargé');
-        
-        // Variables globales
-        let currentMode = 'chat';
-        let currentProblem = null;
-        let userProfile = {
-            level: 1,
-            xp: 0,
-            badges: [],
-            problemsSolved: 0,
-            streak: 0
-        };
+        let currentConcept = null;
 
-        // FONCTION TEST - pour vérifier que tout fonctionne
-        function testFunction() {
-            console.log('✅ Test function appelée');
-            showNotification('Test réussi ! JavaScript fonctionne', 'success');
-            return true;
-        }
-
-        // Fonction pour changer de mode
-        function switchMode(mode) {
-            console.log('🔄 Changing mode to:', mode);
+        async function exploreConcept() {
+            const input = document.getElementById('searchInput');
+            const query = input.value.trim();
             
-            try {
-                // Update buttons
-                document.querySelectorAll('.mode-btn').forEach(btn => {
-                    btn.classList.remove('active');
-                });
-                
-                // Find and activate the clicked button
-                const buttons = document.querySelectorAll('.mode-btn');
-                buttons.forEach(btn => {
-                    if (btn.textContent.includes('Chat') && mode === 'chat') {
-                        btn.classList.add('active');
-                    } else if (btn.textContent.includes('Entraînement') && mode === 'practice') {
-                        btn.classList.add('active');
-                    }
-                });
-                
-                // Update sections
-                const chatSection = document.getElementById('chatSection');
-                const practiceSection = document.getElementById('practiceSection');
-                
-                if (mode === 'chat') {
-                    chatSection.style.display = 'flex';
-                    practiceSection.style.display = 'none';
-                    showNotification('Mode Chat activé', 'success');
-                } else {
-                    chatSection.style.display = 'none';
-                    practiceSection.style.display = 'block';
-                    showNotification('Mode Entraînement activé', 'success');
-                    
-                    // Load a problem if none exists
-                    if (!currentProblem) {
-                        loadNewProblem();
-                    }
-                }
-                
-                currentMode = mode;
-                console.log('✅ Mode changed to:', currentMode);
-                
-            } catch (error) {
-                console.error('❌ Error in switchMode:', error);
-                showNotification('Erreur lors du changement de mode', 'error');
-            }
-        }
-
-        // Fonction pour envoyer un message
-        async function sendMessage() {
-            const input = document.getElementById('messageInput');
-            const message = input.value.trim();
-            
-            console.log('Sending message:', message);
-            
-            if (!message) {
-                showNotification('Veuillez entrer un message', 'warning');
+            if (!query) {
+                showNotification('Veuillez entrer un concept à explorer', 'error');
                 return;
             }
             
-            // Add user message
-            addMessage('user', message);
-            input.value = '';
-            
-            // Show loading
-            const loadingId = addMessage('assistant', '<span class="loading"></span> Analyse en cours...');
+            const mainContent = document.getElementById('mainContent');
+            mainContent.innerHTML = '<div style="text-align: center; padding: 60px;"><div class="loading"></div><p style="margin-top: 20px; color: var(--text-secondary);">Exploration en cours...</p></div>';
             
             try {
-                const response = await fetch('/api/chat', {
+                const response = await fetch('/api/explore', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        message: message,
-                        show_steps: true
-                    })
+                    body: JSON.stringify({ query: query })
                 });
                 
                 const data = await response.json();
-                console.log('Response:', data);
-                
-                // Remove loading message
-                const loadingElement = document.getElementById(loadingId);
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
                 
                 if (data.success) {
-                    let responseContent = data.response || 'Réponse vide reçue';
-                    
-                    // Add solution steps
-                    if (data.solution_steps && data.solution_steps.length > 0) {
-                        responseContent += '<div class="message-steps">';
-                        data.solution_steps.forEach((step, index) => {
-                            responseContent += `<div class="step"><span class="step-number">${index + 1}</span>${step}</div>`;
-                        });
-                        responseContent += '</div>';
-                    }
-                    
-                    addMessage('assistant', responseContent);
-                    
-                    // Add graph if available
-                    if (data.graph) {
-                        addGraph(data.graph);
-                    }
-                    
-                    showNotification('Réponse générée !', 'success');
-                    
+                    currentConcept = data.concept;
+                    displayConcept(data);
+                    showNotification('Concept exploré avec succès !', 'success');
                 } else {
-                    addMessage('assistant', `Erreur: ${data.error || 'Erreur inconnue'}`);
-                    showNotification('Erreur lors du traitement', 'error');
+                    mainContent.innerHTML = `
+                        <div class="welcome-message">
+                            <h2>❌ Erreur</h2>
+                            <p>${data.error || 'Impossible de trouver ce concept'}</p>
+                        </div>
+                    `;
+                    showNotification('Erreur lors de l\'exploration', 'error');
                 }
                 
             } catch (error) {
-                console.error('Chat error:', error);
-                const loadingElement = document.getElementById(loadingId);
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
-                addMessage('assistant', 'Désolé, une erreur de connexion s\'est produite.');
+                console.error('Error:', error);
+                mainContent.innerHTML = `
+                    <div class="welcome-message">
+                        <h2>❌ Erreur de connexion</h2>
+                        <p>Impossible de se connecter au serveur</p>
+                    </div>
+                `;
                 showNotification('Erreur de connexion', 'error');
             }
         }
 
-        // Fonction pour ajouter un message
-        function addMessage(type, content) {
-            const messages = document.getElementById('messages');
-            const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+        function displayConcept(data) {
+            const concept = data.concept;
+            const mainContent = document.getElementById('mainContent');
             
-            const messageDiv = document.createElement('div');
-            messageDiv.id = messageId;
-            messageDiv.className = `message ${type}`;
-            messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
+            // Générer les étoiles de difficulté
+            let difficultyStars = '';
+            for (let i = 1; i <= 5; i++) {
+                difficultyStars += `<span class="difficulty-star ${i > concept.difficulty ? 'empty' : ''}">★</span>`;
+            }
             
-            messages.appendChild(messageDiv);
-            messages.scrollTop = messages.scrollHeight;
+            // Générer les exemples
+            let examplesHtml = '';
+            if (concept.examples && concept.examples.length > 0) {
+                examplesHtml = `
+                    <div class="concept-section">
+                        <h3 class="section-title">📝 Exemples</h3>
+                        <div class="examples-grid">
+                            ${concept.examples.map(ex => `<div class="example-card">${ex}</div>`).join('')}
+                        </div>
+                    </div>
+                `;
+            }
             
-            return messageId;
-        }
-
-        // Fonction pour ajouter un graphique
-        function addGraph(graphData) {
-            const messages = document.getElementById('messages');
-            const graphDiv = document.createElement('div');
-            graphDiv.className = 'graph-container';
-            graphDiv.innerHTML = `
-                <h4 style="color: var(--accent); margin-bottom: 15px;">📊 Visualisation Graphique</h4>
-                <img src="data:image/png;base64,${graphData}" alt="Graphique mathématique" style="max-width: 100%; border-radius: 10px;">
+            // Générer les concepts liés
+            let relatedHtml = '';
+            if (concept.related_concepts && concept.related_concepts.length > 0) {
+                relatedHtml = `
+                    <div class="concept-section">
+                        <h3 class="section-title">🔗 Concepts Liés</h3>
+                        <div class="related-concepts">
+                            ${concept.related_concepts.map(rc => `
+                                <span class="related-tag" onclick="quickExplore('${rc}')">${rc}</span>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            mainContent.innerHTML = `
+                <div class="concept-card">
+                    <div class="concept-header">
+                        <h2 class="concept-title">${concept.name}</h2>
+                        <div class="concept-meta">
+                            <div class="meta-tag">📂 ${concept.category}</div>
+                            <div class="meta-tag">
+                                <div class="difficulty-indicator">
+                                    ${difficultyStars}
+                                    <span style="margin-left: 10px;">${concept.difficulty_text}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="concept-section">
+                        <h3 class="section-title">📖 Définition</h3>
+                        <div class="section-content">
+                            ${concept.definition}
+                        </div>
+                    </div>
+                    
+                    <div class="concept-section">
+                        <h3 class="section-title">💡 Explication Enrichie</h3>
+                        <div class="section-content">
+                            ${data.ai_explanation}
+                        </div>
+                    </div>
+                    
+                    ${examplesHtml}
+                    ${relatedHtml}
+                    
+                    ${data.search_hint ? `
+                        <div style="margin-top: 20px; padding: 15px; background: rgba(102, 126, 234, 0.1); border-radius: 15px; color: var(--text-secondary); font-size: 0.9rem;">
+                            ℹ️ ${data.search_hint}
+                        </div>
+                    ` : ''}
+                    
+                    ${!data.found_in_database ? `
+                        <div style="margin-top: 20px; padding: 15px; background: rgba(243, 156, 18, 0.1); border-radius: 15px; color: var(--text-secondary); font-size: 0.9rem;">
+                            ⚠️ Ce concept a été généré par l'IA car il n'est pas encore dans notre base de données.
+                        </div>
+                    ` : ''}
+                </div>
             `;
-            messages.appendChild(graphDiv);
-            messages.scrollTop = messages.scrollHeight;
         }
 
-        // Fonction pour charger un nouveau problème
-        async function loadNewProblem() {
-            try {
-                const response = await fetch('/api/practice');
-                const problem = await response.json();
-                
-                currentProblem = problem;
-                
-                document.getElementById('problemTitle').textContent = problem.title || 'Nouveau problème';
-                document.getElementById('problemDescription').textContent = problem.description || 'Description du problème...';
-                
-                // Update difficulty stars
-                const stars = '★'.repeat(problem.difficulty || 1) + '☆'.repeat(5 - (problem.difficulty || 1));
-                document.getElementById('problemDifficulty').textContent = stars;
-                
-                // Reset
-                document.getElementById('answerInput').value = '';
-                document.getElementById('resultCard').style.display = 'none';
-                
-                showNotification('Nouveau problème chargé !', 'success');
-                
-            } catch (error) {
-                console.error('Problem loading error:', error);
-                showNotification('Erreur lors du chargement du problème', 'error');
-            }
+        function quickExplore(concept) {
+            document.getElementById('searchInput').value = concept;
+            exploreConcept();
         }
 
-        // Fonction pour soumettre une réponse
-        async function submitAnswer() {
-            if (!currentProblem) {
-                showNotification('Aucun problème chargé', 'warning');
-                return;
-            }
-            
-            const answer = document.getElementById('answerInput').value.trim();
-            if (!answer) {
-                showNotification('Veuillez entrer une réponse', 'warning');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/submit', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        problem_id: currentProblem.id,
-                        answer: answer
-                    })
-                });
-                
-                const result = await response.json();
-                showResult(result);
-                
-                if (result.correct) {
-                    showNotification(`Correct ! +${result.xp_earned || 10} XP`, 'success');
-                    userProfile.problemsSolved++;
-                    updateProfileDisplay();
-                } else {
-                    showNotification('Pas tout à fait... Regardez la solution !', 'error');
-                }
-                
-            } catch (error) {
-                console.error('Submit error:', error);
-                showNotification('Erreur lors de la vérification', 'error');
-            }
-        }
-
-        // Fonction pour afficher le résultat
-        function showResult(result) {
-            const resultCard = document.getElementById('resultCard');
-            const resultContent = document.getElementById('resultContent');
-            
-            resultCard.className = `result-card ${result.correct ? 'correct' : 'incorrect'}`;
-            resultCard.style.display = 'block';
-            
-            let content = `
-                <h4>${result.correct ? '✅ Correct !' : '❌ Incorrect'}</h4>
-                <p><strong>Réponse attendue:</strong> ${result.expected_answer || 'Non disponible'}</p>
-            `;
-            
-            if (result.solution_steps) {
-                content += '<div style="margin-top: 15px;"><strong>Solution détaillée:</strong>';
-                result.solution_steps.forEach((step, index) => {
-                    content += `<div style="margin: 5px 0; padding-left: 20px;">${index + 1}. ${step}</div>`;
-                });
-                content += '</div>';
-            }
-            
-            resultContent.innerHTML = content;
-        }
-
-        // Fonction pour utiliser un exemple
-        function useExample(example) {
-            document.getElementById('messageInput').value = example;
-            sendMessage();
-        }
-
-        // Fonction pour mettre à jour le profil
-        function updateProfileDisplay() {
-            document.getElementById('problemsSolved').textContent = userProfile.problemsSolved;
-            document.getElementById('currentStreak').textContent = userProfile.streak;
-            
-            // Update XP bar
-            const nextLevelXP = userProfile.level === 1 ? 100 : 100 + (userProfile.level - 1) * 50;
-            const currentLevelXP = userProfile.level === 1 ? 0 : 100 + (userProfile.level - 2) * 50;
-            const progressXP = userProfile.xp - currentLevelXP;
-            const neededXP = nextLevelXP - currentLevelXP;
-            const percentage = Math.min((progressXP / neededXP) * 100, 100);
-            
-            document.getElementById('xpFill').style.width = `${percentage}%`;
-            document.getElementById('xpText').textContent = `${userProfile.xp} / ${nextLevelXP} XP`;
-        }
-
-        // Fonction pour afficher les notifications
         function showNotification(message, type = 'info') {
-            // Remove existing notifications
             document.querySelectorAll('.notification').forEach(n => n.remove());
             
             const notification = document.createElement('div');
@@ -1830,126 +1020,50 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             
             document.body.appendChild(notification);
             
-            // Show notification
             setTimeout(() => notification.classList.add('show'), 100);
             
-            // Hide notification after 3 seconds
             setTimeout(() => {
                 notification.classList.remove('show');
                 setTimeout(() => notification.remove(), 300);
             }, 3000);
         }
 
-        // Initialize Mathia when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('DOM Content Loaded - Initializing Mathia');
-            
-            // Wait a bit for all elements to be ready
-            setTimeout(() => {
-                try {
-                    window.mathia = new Mathia();
-                    console.log('Mathia initialized successfully');
-                } catch (error) {
-                    console.error('Failed to initialize Mathia:', error);
-                    
-                    // Fallback: basic button functionality
-                    const sendBtn = document.getElementById('sendBtn');
-                    if (sendBtn) {
-                        sendBtn.addEventListener('click', () => {
-                            console.log('Fallback send button clicked');
-                            alert('Mathia est en cours de chargement...');
-                        });
-                    }
-                    
-                    // Add basic mode switching
-                    document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
-                        btn.addEventListener('click', (e) => {
-                            console.log('Fallback mode button clicked:', e.target.dataset.mode);
-                            
-                            // Basic mode switching
-                            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-                            e.target.classList.add('active');
-                            
-                            const chatSection = document.getElementById('chatSection');
-                            const practiceSection = document.getElementById('practiceSection');
-                            
-                            if (e.target.dataset.mode === 'chat') {
-                                chatSection.style.display = 'flex';
-                                practiceSection.classList.remove('active');
-                            } else {
-                                chatSection.style.display = 'none';
-                                practiceSection.classList.add('active');
-                            }
-                        });
-                    });
+        // Auto-load concepts list
+        async function loadConceptsList() {
+            try {
+                const response = await fetch('/api/concepts');
+                const data = await response.json();
+                
+                if (data.success && data.concepts) {
+                    const conceptList = document.getElementById('conceptList');
+                    conceptList.innerHTML = data.concepts.map(concept => `
+                        <li class="concept-item" onclick="quickExplore('${concept.name.toLowerCase()}')">
+                            <span class="name">${concept.name}</span>
+                            <span class="category">${concept.category}</span>
+                        </li>
+                    `).join('');
                 }
-            }, 100);
-        });
-        
-        // Auto-resize textarea
-        document.addEventListener('DOMContentLoaded', function() {
-            const messageInput = document.getElementById('messageInput');
-            if (messageInput) {
-                messageInput.addEventListener('input', function() {
-                    this.style.height = 'auto';
-                    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-                });
+            } catch (error) {
+                console.error('Error loading concepts:', error);
             }
-        });
-    </script> Fallback: basic button functionality
-                    const sendBtn = document.getElementById('sendBtn');
-                    if (sendBtn) {
-                        sendBtn.addEventListener('click', () => {
-                            console.log('Fallback send button clicked');
-                            alert('Mathia est en cours de chargement...');
-                        });
-                    }
-                    
-                    // Add basic mode switching
-                    document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
-                        btn.addEventListener('click', (e) => {
-                            console.log('Fallback mode button clicked:', e.target.dataset.mode);
-                            
-                            // Basic mode switching
-                            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-                            e.target.classList.add('active');
-                            
-                            const chatSection = document.getElementById('chatSection');
-                            const practiceSection = document.getElementById('practiceSection');
-                            
-                            if (e.target.dataset.mode === 'chat') {
-                                chatSection.style.display = 'flex';
-                                practiceSection.classList.remove('active');
-                            } else {
-                                chatSection.style.display = 'none';
-                                practiceSection.classList.add('active');
-                            }
-                        });
-                    });
-                }
-            }, 100);
-        });
-        
-        // Auto-resize textarea
-        document.getElementById('messageInput').addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Mathia Explorer loaded');
+            loadConceptsList();
         });
     </script>
 </body>
 </html>'''
 
 if __name__ == '__main__':
-    print("🎲 MATHIA V2.0 - Assistant Mathématique Gamifié")
+    print("🔢 MATHIA V3.0 - Explorateur de Concepts Mathématiques")
     print("=" * 60)
     
     try:
-        import sympy, matplotlib, numpy as np
         from mistralai import Mistral
         print("✅ Dépendances installées")
-        
-        matplotlib.use('Agg')
-        print("✅ Backend matplotlib configuré")
         
         port = int(os.environ.get('PORT', 5000))
         debug_mode = os.environ.get('FLASK_ENV') != 'production'
@@ -1957,27 +1071,20 @@ if __name__ == '__main__':
         print(f"🌐 Port: {port}")
         print(f"🔧 Debug: {debug_mode}")
         print(f"🔑 Clés Mistral: {len(mathia.api_keys)} configurées")
+        print(f"📚 Concepts disponibles: {len(mathia.concept_database)}")
         
-        print("\n🎮 Fonctionnalités:")
-        print("   • Chat intelligent avec IA Mistral")
-        print("   • Résolution étape par étape")
-        print("   • Graphiques interactifs")
-        print("   • Système de gamification (XP, niveaux, badges)")
-        print("   • Problèmes d'entraînement guidés")
-        print("   • Interface responsive moderne")
+        print("\n🎯 Fonctionnalités:")
+        print("   • Exploration interactive de concepts")
+        print("   • Explications enrichies par IA")
+        print("   • Réseau de concepts liés")
+        print("   • Navigation intuitive")
+        print("   • Base de 10+ concepts mathématiques")
         
-        print("\n🏆 Système de récompenses:")
-        print("   • XP pour chaque problème résolu")
-        print("   • Progression par niveaux")
-        print("   • 6 badges à débloquer")
-        print("   • Suivi des séries de victoires")
-        
-        print("\n📊 Types de problèmes:")
-        print("   • Équations linéaires et quadratiques")
-        print("   • Fonctions et graphiques")
-        print("   • Calcul différentiel")
-        print("   • Analyse de limites")
-        print("   • Et bien plus...")
+        print("\n📂 Catégories:")
+        categories = set(c.category for c in mathia.concept_database.values())
+        for cat in categories:
+            count = sum(1 for c in mathia.concept_database.values() if c.category == cat)
+            print(f"   • {cat}: {count} concepts")
         
         print("\n🚀 Démarrage de Mathia...")
         
