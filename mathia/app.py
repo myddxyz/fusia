@@ -6,234 +6,399 @@ import logging
 import time
 import hashlib
 import re
+from functools import wraps
+from datetime import datetime, timedelta
+from collections import defaultdict
+import markdown
 
-logging.basicConfig(level=logging.INFO)
+# Configuration du logging structuré
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Configuration
+class Config:
+    # Clés API Mistral (hardcodées pour facilité d'utilisation)
+    API_KEYS = [
+        'FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX',
+        '9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF',
+        'cvkQHVcomFFEW47G044x2p4DTyk5BIc7'
+    ]
+    
+    # Sécurité
+    MAX_CONCEPT_LENGTH = 200
+    MIN_CONCEPT_LENGTH = 2
+    ALLOWED_ORIGINS = '*'
+    
+    # Performance
+    CACHE_MAX_SIZE = 100
+    REQUEST_TIMEOUT = 30
+    RATE_LIMIT_REQUESTS = 10
+    RATE_LIMIT_WINDOW = 60  # secondes
+    
+    # Mistral
+    MISTRAL_MODEL_PRIMARY = "mistral-large-latest"
+    MISTRAL_MODEL_FALLBACK = "mistral-small-latest"
+    MISTRAL_MAX_TOKENS = 1200
+    MISTRAL_TEMPERATURE = 0.7
+
+logger.info(f"✅ {len(Config.API_KEYS)} clé(s) API Mistral configurée(s)")
+
+
+# Rate Limiting Simple
+class RateLimiter:
+    def __init__(self):
+        self.requests = defaultdict(list)
+    
+    def is_allowed(self, identifier):
+        now = datetime.now()
+        # Nettoyer les anciennes requêtes
+        self.requests[identifier] = [
+            req_time for req_time in self.requests[identifier]
+            if now - req_time < timedelta(seconds=Config.RATE_LIMIT_WINDOW)
+        ]
+        
+        if len(self.requests[identifier]) >= Config.RATE_LIMIT_REQUESTS:
+            return False
+        
+        self.requests[identifier].append(now)
+        return True
+
+rate_limiter = RateLimiter()
+
+
+# Décorateur pour rate limiting
+def require_rate_limit(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        identifier = request.remote_addr
+        if not rate_limiter.is_allowed(identifier):
+            return jsonify({
+                'success': False,
+                'error': 'Trop de requêtes. Veuillez patienter.'
+            }), 429
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# Cache LRU simple
+class LRUCache:
+    def __init__(self, max_size=100):
+        self.cache = {}
+        self.access_order = []
+        self.max_size = max_size
+    
+    def get(self, key):
+        if key in self.cache:
+            # Mettre à jour l'ordre d'accès
+            self.access_order.remove(key)
+            self.access_order.append(key)
+            return self.cache[key]
+        return None
+    
+    def set(self, key, value):
+        if key in self.cache:
+            self.access_order.remove(key)
+        elif len(self.cache) >= self.max_size:
+            # Supprimer le plus ancien
+            oldest = self.access_order.pop(0)
+            del self.cache[oldest]
+        
+        self.cache[key] = value
+        self.access_order.append(key)
+    
+    def size(self):
+        return len(self.cache)
+
+
 class MathiaExplorer:
-    """Explorateur mathématique avec IA Mistral"""
+    """Explorateur mathématique avec IA Mistral - Version optimisée"""
     
     def __init__(self):
-        self.api_keys = [
-            os.environ.get('MISTRAL_KEY_1', 'FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX'),
-            os.environ.get('MISTRAL_KEY_2', '9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF'),
-            os.environ.get('MISTRAL_KEY_3', 'cvkQHVcomFFEW47G044x2p4DTyk5BIc7')
-        ]
+        self.api_keys = Config.API_KEYS
         self.current_key_index = 0
-        self.cache = {}
+        self.cache = LRUCache(max_size=Config.CACHE_MAX_SIZE)
         self.stats = {
             'requests': 0,
             'cache_hits': 0,
-            'concepts_explored': 0
+            'concepts_explored': 0,
+            'errors': 0,
+            'avg_processing_time': 0
         }
+        self.processing_times = []
         
-        logger.info("Mathia Explorer initialized with Mistral AI")
+        logger.info("✅ Mathia Explorer initialisé")
     
-    def get_mistral_client(self):
-        """Obtient un client Mistral avec rotation des clés"""
+    def get_next_api_key(self):
+        """Obtient la prochaine clé API avec rotation circulaire"""
         key = self.api_keys[self.current_key_index % len(self.api_keys)]
         self.current_key_index += 1
-        return Mistral(api_key=key)
+        return key
     
-    def retry_with_different_keys(self, func, *args, **kwargs):
-        """Retry avec toutes les clés API disponibles"""
+    def call_mistral_with_retry(self, prompt, max_retries=None):
+        """Appelle Mistral avec retry sur toutes les clés disponibles"""
+        if max_retries is None:
+            max_retries = len(self.api_keys)
+        
         last_exception = None
         
-        for attempt in range(len(self.api_keys)):
+        for attempt in range(max_retries):
             try:
-                logger.info(f"Tentative {attempt + 1} avec clé API")
-                result = func(*args, **kwargs)
-                return result
+                api_key = self.get_next_api_key()
+                client = Mistral(api_key=api_key)
+                
+                logger.info(f"🔑 Tentative {attempt + 1}/{max_retries}")
+                
+                response = client.chat.complete(
+                    model=Config.MISTRAL_MODEL_PRIMARY,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=Config.MISTRAL_TEMPERATURE,
+                    max_tokens=Config.MISTRAL_MAX_TOKENS
+                )
+                
+                return response.choices[0].message.content.strip()
+                
             except Exception as e:
-                logger.warning(f"Erreur avec clé {attempt + 1}: {str(e)}")
+                error_msg = str(e).lower()
+                
+                # Si rate limit ou capacity, essayer le modèle fallback
+                if "429" in error_msg or "capacity" in error_msg:
+                    logger.warning(f"⚠️ Rate limit/Capacity - Tentative avec modèle fallback")
+                    try:
+                        response = client.chat.complete(
+                            model=Config.MISTRAL_MODEL_FALLBACK,
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=Config.MISTRAL_TEMPERATURE,
+                            max_tokens=Config.MISTRAL_MAX_TOKENS
+                        )
+                        return response.choices[0].message.content.strip()
+                    except Exception as fallback_error:
+                        logger.warning(f"❌ Fallback échoué: {fallback_error}")
+                
                 last_exception = e
-                self.current_key_index += 1
-                if attempt < len(self.api_keys) - 1:
-                    time.sleep(2)
-                continue
+                logger.warning(f"❌ Erreur tentative {attempt + 1}: {e}")
+                
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # Backoff exponentiel
         
-        raise Exception(f"Toutes les clés API ont échoué. Dernière erreur: {str(last_exception)}")
+        raise Exception(f"Toutes les tentatives ont échoué: {last_exception}")
     
     def get_cache_key(self, concept, language, detail_level):
-        """Génère une clé de cache unique"""
-        return hashlib.md5(f"{concept.lower().strip()}_{language}_{detail_level}".encode()).hexdigest()
+        """Génère une clé de cache unique et normalisée"""
+        normalized = f"{concept.lower().strip()}_{language}_{detail_level}"
+        return hashlib.md5(normalized.encode()).hexdigest()
     
     def markdown_to_html(self, text):
-        """Convertit le Markdown en HTML"""
+        """Convertit le Markdown en HTML de manière robuste"""
         if not text:
             return ""
         
-        text = text.strip()
-        text = re.sub(r'\*\*([^*]+?)\*\*', r'<strong>\1</strong>', text)
-        text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
-        
-        paragraphs = text.split('\n\n')
-        formatted_paragraphs = []
-        
-        for para in paragraphs:
-            para = para.strip()
-            if para and not para.startswith('<'):
-                para = f'<p>{para}</p>'
-            if para:
-                formatted_paragraphs.append(para)
-        
-        return '\n'.join(formatted_paragraphs)
+        # Utiliser la bibliothèque markdown pour une conversion complète
+        try:
+            html = markdown.markdown(
+                text,
+                extensions=['extra', 'nl2br']
+            )
+            return html
+        except:
+            # Fallback vers la conversion basique
+            text = text.strip()
+            text = re.sub(r'\*\*([^*]+?)\*\*', r'<strong>\1</strong>', text)
+            text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
+            
+            paragraphs = text.split('\n\n')
+            formatted = []
+            
+            for para in paragraphs:
+                para = para.strip()
+                if para and not para.startswith('<'):
+                    para = f'<p>{para}</p>'
+                if para:
+                    formatted.append(para)
+            
+            return '\n'.join(formatted)
     
     def get_language_instruction(self, language):
         """Retourne l'instruction de langue"""
         instructions = {
-            'fr': 'Réponds en français.',
-            'en': 'Respond in English.',
-            'es': 'Responde en español.'
+            'fr': 'Réponds EXCLUSIVEMENT en français.',
+            'en': 'Respond EXCLUSIVELY in English.',
+            'es': 'Responde EXCLUSIVAMENTE en español.'
         }
         return instructions.get(language, instructions['fr'])
     
-    def explore_concept_with_ai(self, concept, language='fr', detail_level='moyen'):
-        """Explore un concept mathématique avec Mistral AI"""
-        def _explore():
-            client = self.get_mistral_client()
-            
-            lang_instruction = self.get_language_instruction(language)
-            
-            word_counts = {
-                'court': '150-200 mots',
-                'moyen': '300-400 mots',
-                'long': '500-600 mots'
-            }
-            word_count = word_counts.get(detail_level, word_counts['moyen'])
-            
-            prompt = f"""Tu es Mathia, un expert en mathématiques qui vulgarise les concepts de manière claire et pédagogique.
+    def build_prompt(self, concept, language, detail_level):
+        """Construit le prompt pour Mistral"""
+        lang_instruction = self.get_language_instruction(language)
+        
+        word_counts = {
+            'court': '150-200 mots',
+            'moyen': '300-400 mots',
+            'long': '500-600 mots'
+        }
+        word_count = word_counts.get(detail_level, word_counts['moyen'])
+        
+        prompt = f"""Tu es Mathia, un expert en mathématiques passionné par la vulgarisation. Ta mission est d'expliquer des concepts mathématiques de manière claire, structurée et accessible.
 
-Concept à explorer: "{concept}"
+**Concept à explorer:** "{concept}"
 
 {lang_instruction}
 
-Fournis une explication complète et structurée du concept en {word_count}:
+**Instructions:**
+Fournis une explication complète en {word_count}, structurée ainsi:
 
-1. DÉFINITION (2-3 phrases claires)
-   - Explique ce que c'est en termes simples
+1. **DÉFINITION** (2-3 phrases claires)
+   - Explique ce qu'est le concept en termes simples
    - Donne le contexte mathématique
 
-2. EXPLICATION DÉTAILLÉE (plusieurs paragraphes)
+2. **EXPLICATION DÉTAILLÉE** (plusieurs paragraphes)
    - Développe le concept en profondeur
    - Explique les propriétés importantes
-   - Montre comment ça fonctionne
+   - Montre le fonctionnement
 
-3. EXEMPLES CONCRETS (3-5 exemples)
-   - Donne des exemples mathématiques précis
-   - Utilise des cas simples d'abord
-   - Montre des applications pratiques
+3. **EXEMPLES CONCRETS** (3-5 exemples)
+   - Exemples mathématiques précis avec calculs
+   - Cas simples puis plus complexes
+   - Applications pratiques
 
-4. CONCEPTS LIÉS (liste de 4-6 concepts)
-   - Mentionne les concepts connexes importants
-   - Explique brièvement le lien
+4. **CONCEPTS LIÉS** (4-6 concepts)
+   - Liste des concepts connexes
+   - Lien avec le concept principal
 
-5. POURQUOI C'EST IMPORTANT
-   - Applications dans la vie réelle
-   - Importance en mathématiques
+5. **IMPORTANCE**
+   - Applications réelles
+   - Pourquoi c'est fondamental en mathématiques
 
-6. CONSEIL D'APPRENTISSAGE
-   - Un conseil pratique pour mieux comprendre
+6. **CONSEIL D'APPRENTISSAGE**
+   - Un conseil pratique pour la compréhension
 
-Règles:
-- Écris en paragraphes naturels, PAS en format liste à puces
+**Format:**
+- Écris en paragraphes naturels et fluides
 - Utilise un langage accessible mais précis
 - Sois pédagogique et encourageant
-- Structure ton texte avec des transitions fluides
-- Ne mets PAS d'astérisques ou de markdown
-- Écris en texte brut
+- Structure avec des transitions
+- Utilise le markdown pour la mise en forme (gras, italique)
+- Évite les listes à puces, privilégie la prose
 
-Réponse:"""
-
-            try:
-                response = client.chat.complete(
-                    model="mistral-large-latest",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.7,
-                    max_tokens=1200
-                )
-            except Exception as e:
-                if "429" in str(e) or "capacity" in str(e):
-                    logger.warning("Rate limit, utilisation du modèle small...")
-                    response = client.chat.complete(
-                        model="mistral-small-latest",
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.7,
-                        max_tokens=1200
-                    )
-                else:
-                    raise e
-            
-            return response.choices[0].message.content.strip()
+Réponds maintenant:"""
         
-        return self.retry_with_different_keys(_explore)
+        return prompt
     
-    def process_concept(self, concept, language='fr', detail_level='moyen'):
-        """Traite un concept mathématique complet"""
-        logger.info(f"🔍 Exploration: '{concept}' (langue: {language}, détail: {detail_level})")
-        self.stats['requests'] += 1
-        start_time = time.time()
-        
-        if not concept or len(concept.strip()) < 2:
-            return {
-                'success': False,
-                'error': 'Le concept doit contenir au moins 2 caractères'
-            }
+    def validate_concept(self, concept):
+        """Valide le concept d'entrée"""
+        if not concept or not isinstance(concept, str):
+            return False, "Le concept doit être une chaîne de caractères"
         
         concept = concept.strip()
         
+        if len(concept) < Config.MIN_CONCEPT_LENGTH:
+            return False, f"Le concept doit contenir au moins {Config.MIN_CONCEPT_LENGTH} caractères"
+        
+        if len(concept) > Config.MAX_CONCEPT_LENGTH:
+            return False, f"Le concept ne doit pas dépasser {Config.MAX_CONCEPT_LENGTH} caractères"
+        
+        # Vérifier les caractères suspects
+        if re.search(r'[<>{}]', concept):
+            return False, "Le concept contient des caractères non autorisés"
+        
+        return True, concept
+    
+    def process_concept(self, concept, language='fr', detail_level='moyen'):
+        """Traite un concept mathématique complet"""
+        logger.info(f"🔍 Nouvelle requête: '{concept}' (langue={language}, détail={detail_level})")
+        self.stats['requests'] += 1
+        start_time = time.time()
+        
+        # Validation
+        is_valid, result = self.validate_concept(concept)
+        if not is_valid:
+            self.stats['errors'] += 1
+            return {'success': False, 'error': result}
+        
+        concept = result
+        
+        # Vérifier le cache
         cache_key = self.get_cache_key(concept, language, detail_level)
-        if cache_key in self.cache:
-            logger.info("💾 Résultat trouvé en cache")
+        cached_result = self.cache.get(cache_key)
+        
+        if cached_result:
+            logger.info("💾 Cache HIT")
             self.stats['cache_hits'] += 1
-            return self.cache[cache_key]
+            cached_result['from_cache'] = True
+            return cached_result
+        
+        logger.info("🔄 Cache MISS - Génération avec Mistral")
         
         try:
-            logger.info(f"🤖 Génération avec Mistral pour: {concept}")
-            ai_response = self.explore_concept_with_ai(concept, language, detail_level)
+            # Construire et exécuter le prompt
+            prompt = self.build_prompt(concept, language, detail_level)
+            ai_response = self.call_mistral_with_retry(prompt)
             
             if not ai_response:
-                return {'success': False, 'error': 'Erreur lors de la génération de la réponse'}
+                raise Exception("Réponse vide de Mistral")
             
+            # Convertir en HTML
             formatted_response = self.markdown_to_html(ai_response)
+            
+            # Calculer le temps de traitement
+            processing_time = round(time.time() - start_time, 2)
+            self.processing_times.append(processing_time)
+            
+            # Mettre à jour les statistiques
+            if self.processing_times:
+                self.stats['avg_processing_time'] = round(
+                    sum(self.processing_times) / len(self.processing_times), 2
+                )
             
             result = {
                 'success': True,
                 'concept': concept.title(),
                 'explanation': formatted_response,
-                'processing_time': round(time.time() - start_time, 2),
+                'processing_time': processing_time,
                 'detail_level': detail_level,
                 'language': language,
-                'source': 'mistral_ai'
+                'source': 'mistral_ai',
+                'from_cache': False,
+                'cache_size': self.cache.size()
             }
             
-            self.cache[cache_key] = result
+            # Mettre en cache
+            self.cache.set(cache_key, result)
             self.stats['concepts_explored'] += 1
-            logger.info(f"✅ Traitement terminé en {result['processing_time']}s")
+            
+            logger.info(f"✅ Succès en {processing_time}s")
             return result
             
         except Exception as e:
-            logger.error(f"❌ Erreur: {str(e)}")
+            logger.error(f"❌ Erreur: {str(e)}", exc_info=True)
+            self.stats['errors'] += 1
             return {
                 'success': False,
                 'error': f'Erreur lors du traitement: {str(e)}'
             }
 
+
 # Instance globale
 mathia = MathiaExplorer()
 
+
+# Routes
 @app.route('/')
 def index():
-    """Interface principale de Mathia"""
+    """Interface principale"""
     return render_template_string(MATHIA_TEMPLATE)
 
+
 @app.route('/api/explore', methods=['POST', 'OPTIONS'])
+@require_rate_limit
 def explore():
     """API d'exploration de concepts"""
     
-    # Handle CORS preflight
+    # CORS preflight
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
         response.headers.add('Access-Control-Allow-Origin', '*')
@@ -242,64 +407,85 @@ def explore():
         return response
     
     try:
-        logger.info("🚀 REQUÊTE /api/explore")
-        logger.info(f"Content-Type: {request.content_type}")
-        logger.info(f"Method: {request.method}")
-        
+        # Validation du Content-Type
         if not request.is_json:
-            logger.error(f"Content-Type incorrect: {request.content_type}")
-            return jsonify({'success': False, 'error': 'Content-Type doit être application/json'}), 400
+            return jsonify({
+                'success': False,
+                'error': 'Content-Type doit être application/json'
+            }), 400
         
         data = request.get_json()
-        logger.info(f"Data reçue: {data}")
         
         if not data:
-            return jsonify({'success': False, 'error': 'Données JSON requises'}), 400
+            return jsonify({
+                'success': False,
+                'error': 'Corps de requête JSON requis'
+            }), 400
         
+        # Extraction et validation des paramètres
         concept = data.get('concept', '').strip()
         language = data.get('language', 'fr')
         detail_level = data.get('detail_level', 'moyen')
         
+        # Validation de la langue
+        if language not in ['fr', 'en', 'es']:
+            language = 'fr'
+        
+        # Validation du niveau de détail
+        if detail_level not in ['court', 'moyen', 'long']:
+            detail_level = 'moyen'
+        
         if not concept:
-            return jsonify({'success': False, 'error': 'Concept requis'}), 400
+            return jsonify({
+                'success': False,
+                'error': 'Le paramètre "concept" est requis'
+            }), 400
         
-        logger.info(f"🚀 EXPLORATION: '{concept}' ({language}, {detail_level})")
-        
+        # Traitement
         result = mathia.process_concept(concept, language, detail_level)
         
         if not result.get('success'):
-            error_msg = result.get('error', 'Erreur inconnue')
-            logger.error(f"❌ ÉCHEC: {error_msg}")
-            return jsonify({'success': False, 'error': error_msg}), 500
+            return jsonify(result), 500
         
-        logger.info(f"✅ SUCCÈS: {result.get('concept', 'Sans titre')}")
-        return jsonify(result), 200
+        response = jsonify(result)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response, 200
         
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f"💥 ERREUR ENDPOINT: {error_msg}", exc_info=True)
-        return jsonify({'success': False, 'error': f'Erreur serveur: {error_msg}'}), 500
+        logger.error(f"💥 Erreur endpoint: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': 'Erreur interne du serveur'
+        }), 500
+
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Statistiques"""
+    """Récupère les statistiques"""
     try:
-        return jsonify(mathia.stats), 200
+        stats = mathia.stats.copy()
+        stats['cache_size'] = mathia.cache.size()
+        stats['cache_max_size'] = Config.CACHE_MAX_SIZE
+        return jsonify(stats), 200
     except Exception as e:
         logger.error(f"Erreur stats: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Erreur lors de la récupération des stats'}), 500
+
 
 @app.route('/health')
 def health():
-    """Health check"""
+    """Health check endpoint"""
     return jsonify({
         'status': 'OK',
         'service': 'Mathia Explorer',
-        'version': '3.0',
-        'routes': [rule.rule for rule in app.url_map.iter_rules()]
-    })
+        'version': '4.0',
+        'api_keys_configured': len(Config.API_KEYS),
+        'cache_size': mathia.cache.size(),
+        'stats': mathia.stats
+    }), 200
 
-# Template HTML
+
+# Template HTML complet
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -364,26 +550,15 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             border-bottom: 1px solid var(--border);
         }
         
-        .back-button {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            border-radius: 15px; padding: 10px 20px; 
-            color: var(--text-primary); text-decoration: none;
-            display: flex; align-items: center; gap: 10px; 
-            font-weight: 600; font-size: 0.9rem;
-            transition: all 0.3s ease;
-            box-shadow: 0 2px 10px var(--shadow);
-        }
-        
-        [data-theme="light"] .back-button {
-            background: rgba(255, 255, 255, 0.3);
+        .logo {
+            font-size: 1.2rem;
+            font-weight: 700;
             color: white;
-            border: 1px solid rgba(255, 255, 255, 0.4);
+            text-decoration: none;
         }
         
-        .back-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px var(--shadow);
+        [data-theme="dark"] .logo {
+            color: var(--text-primary);
         }
         
         .header-controls {
@@ -406,11 +581,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             border: 1px solid rgba(255, 255, 255, 0.4);
         }
         
-        .language-selector:hover { 
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px var(--shadow);
-        }
-        
         .theme-toggle {
             background: var(--bg-tertiary);
             border: 1px solid var(--border);
@@ -425,29 +595,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             background: rgba(255, 255, 255, 0.3);
             color: white;
             border: 1px solid rgba(255, 255, 255, 0.4);
-        }
-        
-        .theme-toggle:hover { 
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px var(--shadow);
-        }
-        
-        .author-link {
-            font-size: 0.85rem; 
-            color: var(--text-primary); 
-            text-decoration: none;
-            font-weight: 500; 
-            transition: all 0.2s ease;
-            opacity: 0.8;
-        }
-        
-        [data-theme="light"] .author-link {
-            color: white;
-        }
-        
-        .author-link:hover { 
-            opacity: 1; 
-            transform: translateY(-1px); 
         }
         
         .container {
@@ -576,17 +723,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             backdrop-filter: none;
         }
         
-        .detail-btn:hover { 
-            transform: translateY(-2px); 
-            background: rgba(255, 255, 255, 0.35);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-        }
-        
-        [data-theme="dark"] .detail-btn:hover {
-            background: var(--bg-secondary);
-            box-shadow: 0 8px 25px var(--shadow);
-        }
-        
         .detail-btn.active {
             background: rgba(255, 255, 255, 0.5); 
             color: white; 
@@ -620,18 +756,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             backdrop-filter: none;
         }
         
-        .chip:hover {
-            background: rgba(255, 255, 255, 0.4); 
-            color: white; transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-        }
-        
-        [data-theme="dark"] .chip:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            box-shadow: 0 6px 20px var(--shadow);
-        }
-        
         .btn {
             background: rgba(255, 255, 255, 0.25);
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -648,20 +772,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             backdrop-filter: none;
         }
         
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px); 
-            background: rgba(255, 255, 255, 0.35);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-        }
-        
-        [data-theme="dark"] .btn:hover:not(:disabled) {
-            background: var(--bg-secondary);
-            box-shadow: 0 8px 25px var(--shadow);
-        }
-        
-        .btn:active { transform: translateY(0); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        
         .btn-primary {
             background: rgba(255, 255, 255, 0.4); 
             color: white;
@@ -675,15 +785,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             border-color: var(--accent);
         }
         
-        .btn-primary:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.5);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-        }
-        
-        [data-theme="dark"] .btn-primary:hover:not(:disabled) {
-            background: var(--accent-hover);
-            box-shadow: 0 10px 30px var(--shadow);
-        }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         
         .controls {
             display: flex; justify-content: center; align-items: center;
@@ -783,27 +885,17 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             backdrop-filter: none;
         }
         
-        .copy-btn:hover {
-            transform: translateY(-2px); color: white; 
-            background: rgba(255, 255, 255, 0.35);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-        }
-        
-        [data-theme="dark"] .copy-btn:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            box-shadow: 0 6px 20px var(--shadow);
-        }
-        
-        .copy-btn.success { color: #4ade80; }
-        
         .result-meta { color: rgba(255,255,255,0.9); font-size: 0.9rem; margin-bottom: 20px; }
         
         [data-theme="dark"] .result-meta {
             color: var(--text-secondary);
         }
         
-        .result-content { color: rgba(255,255,255,0.95); line-height: 1.7; font-size: 1rem; }
+        .result-content { 
+            color: rgba(255,255,255,0.95); 
+            line-height: 1.7; 
+            font-size: 1rem; 
+        }
         
         [data-theme="dark"] .result-content {
             color: var(--text-primary);
@@ -816,10 +908,22 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             color: var(--text-primary);
         }
         
-        .result-content em { font-style: italic; color: rgba(255,255,255,0.98); }
+        .cache-badge {
+            display: inline-block;
+            background: rgba(74, 222, 128, 0.3);
+            border: 1px solid rgba(74, 222, 128, 0.5);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
         
-        [data-theme="dark"] .result-content em {
-            color: var(--text-secondary);
+        [data-theme="dark"] .cache-badge {
+            background: rgba(74, 222, 128, 0.2);
+            border-color: rgba(74, 222, 128, 0.4);
+            color: #4ade80;
         }
         
         .loading {
@@ -842,6 +946,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             border-radius: 15px; color: white; font-weight: 500; z-index: 1000;
             transform: translateX(400px); transition: all 0.3s ease;
             backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         }
         
         .notification.show { transform: translateX(0); }
@@ -867,10 +972,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 </head>
 <body>
     <div class="top-header">
-        <a href="/" class="back-button">
-            <span>←</span>
-            <span data-text-key="back_to_hub">Retour au Hub</span>
-        </a>
+        <a href="#" class="logo" onclick="return false;">🔢 Mathia Explorer</a>
         
         <div class="header-controls">
             <select class="language-selector" id="languageSelector" onchange="changeLanguage()">
@@ -880,7 +982,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             </select>
             
             <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
-            <a href="#" class="author-link" data-text-key="by_mydd">by Mydd</a>
         </div>
     </div>
 
@@ -952,7 +1053,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     📋
                 </button>
             </div>
-            <div class="result-meta" id="resultMeta">Source: Mistral AI • 2.3s • Moyen</div>
+            <div class="result-meta" id="resultMeta"></div>
             <div class="result-content" id="resultContent"></div>
         </div>
     </div>
@@ -967,7 +1068,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             fr: {
                 title: "🔢 Mathia",
                 subtitle: "Explorateur de concepts mathématiques avec IA",
-                back_to_hub: "Retour au Hub",
                 search_concept: "Concept à explorer",
                 search_placeholder: "Fonction, dérivée, probabilité, matrice...",
                 popular_suggestions: "Suggestions populaires:",
@@ -985,7 +1085,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 requests: "requêtes",
                 cached: "en cache",
                 concepts: "concepts",
-                by_mydd: "by Mydd",
                 analyzing: "Analyse...",
                 generating: "Génération...",
                 completed: "Terminé !",
@@ -995,12 +1094,13 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 already_processing: "Une exploration est déjà en cours...",
                 invalid_concept: "Veuillez entrer un concept valide (minimum 2 caractères)",
                 explanation_generated: "Explication générée !",
-                processing_error: "Erreur d'exploration"
+                processing_error: "Erreur d'exploration",
+                from_cache: "Depuis le cache",
+                rate_limit_error: "Trop de requêtes. Patientez quelques instants."
             },
             en: {
                 title: "🔢 Mathia",
                 subtitle: "Mathematical concepts explorer with AI",
-                back_to_hub: "Back to Hub",
                 search_concept: "Concept to explore",
                 search_placeholder: "Function, derivative, probability, matrix...",
                 popular_suggestions: "Popular suggestions:",
@@ -1018,7 +1118,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 requests: "requests",
                 cached: "cached",
                 concepts: "concepts",
-                by_mydd: "by Mydd",
                 analyzing: "Analyzing...",
                 generating: "Generating...",
                 completed: "Completed!",
@@ -1028,12 +1127,13 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 already_processing: "An exploration is already running...",
                 invalid_concept: "Please enter a valid concept (minimum 2 characters)",
                 explanation_generated: "Explanation generated!",
-                processing_error: "Exploration error"
+                processing_error: "Exploration error",
+                from_cache: "From cache",
+                rate_limit_error: "Too many requests. Please wait a moment."
             },
             es: {
                 title: "🔢 Mathia",
                 subtitle: "Explorador de conceptos matemáticos con IA",
-                back_to_hub: "Volver al Hub",
                 search_concept: "Concepto a explorar",
                 search_placeholder: "Función, derivada, probabilidad, matriz...",
                 popular_suggestions: "Sugerencias populares:",
@@ -1051,7 +1151,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 requests: "solicitudes",
                 cached: "en caché", 
                 concepts: "conceptos",
-                by_mydd: "by Mydd",
                 analyzing: "Analizando...",
                 generating: "Generando...",
                 completed: "¡Completado!",
@@ -1061,14 +1160,16 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 already_processing: "Ya hay una exploración en ejecución...",
                 invalid_concept: "Por favor ingrese un concepto válido (mínimo 2 caracteres)",
                 explanation_generated: "¡Explicación generada!",
-                processing_error: "Error de exploración"
+                processing_error: "Error de exploración",
+                from_cache: "Desde caché",
+                rate_limit_error: "Demasiadas solicitudes. Espere un momento."
             }
         };
 
         const popularConcepts = {
-            fr: ["Fonction", "Dérivée", "Intégrale", "Matrice", "Probabilité", "Limite", "Vecteur", "Équation", "Nombre complexe"],
-            en: ["Function", "Derivative", "Integral", "Matrix", "Probability", "Limit", "Vector", "Equation", "Complex number"],
-            es: ["Función", "Derivada", "Integral", "Matriz", "Probabilidad", "Límite", "Vector", "Ecuación", "Número complejo"]
+            fr: ["Fonction", "Dérivée", "Intégrale", "Matrice", "Probabilité", "Limite", "Vecteur", "Équation"],
+            en: ["Function", "Derivative", "Integral", "Matrix", "Probability", "Limit", "Vector", "Equation"],
+            es: ["Función", "Derivada", "Integral", "Matriz", "Probabilidad", "Límite", "Vector", "Ecuación"]
         };
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -1081,26 +1182,30 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             initializeSuggestions();
             loadStats();
             updateTranslations();
+            
             const conceptInput = document.getElementById('concept');
             if (conceptInput) conceptInput.focus();
         }
 
         function loadTheme() {
-            currentTheme = 'light';
-            document.documentElement.setAttribute('data-theme', 'light');
+            const savedTheme = localStorage.getItem('mathia_theme') || 'light';
+            currentTheme = savedTheme;
+            document.documentElement.setAttribute('data-theme', currentTheme);
             updateThemeToggle();
         }
 
         function loadLanguage() {
-            currentLanguage = 'fr';
+            const savedLanguage = localStorage.getItem('mathia_language') || 'fr';
+            currentLanguage = savedLanguage;
             const selector = document.getElementById('languageSelector');
-            if (selector) selector.value = 'fr';
+            if (selector) selector.value = currentLanguage;
             updateTranslations();
         }
 
         function toggleTheme() {
             currentTheme = currentTheme === 'light' ? 'dark' : 'light';
             document.documentElement.setAttribute('data-theme', currentTheme);
+            localStorage.setItem('mathia_theme', currentTheme);
             updateThemeToggle();
         }
 
@@ -1113,7 +1218,10 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
         function changeLanguage() {
             const selector = document.getElementById('languageSelector');
-            if (selector) currentLanguage = selector.value;
+            if (selector) {
+                currentLanguage = selector.value;
+                localStorage.setItem('mathia_language', currentLanguage);
+            }
             updateTranslations();
             initializeSuggestions();
         }
@@ -1152,12 +1260,10 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             
             navigator.clipboard.writeText(textContent).then(function() {
                 copyBtn.textContent = '✅';
-                copyBtn.classList.add('success');
                 showNotification(translations[currentLanguage].copied, 'success');
                 
                 setTimeout(() => {
                     copyBtn.textContent = '📋';
-                    copyBtn.classList.remove('success');
                 }, 2000);
             }).catch(function() {
                 showNotification(translations[currentLanguage].copy_error, 'error');
@@ -1255,8 +1361,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 updateProgress(20);
                 updateStatus(translations[currentLanguage].analyzing);
                 
-                console.log('Sending request to /api/explore:', requestData);
-                
                 const response = await fetch('/api/explore', {
                     method: 'POST',
                     headers: {
@@ -1269,29 +1373,26 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
 
-                console.log('Response status:', response.status);
-                console.log('Response content-type:', response.headers.get('content-type'));
-
                 if (!response.ok) {
-                    let errorMessage = `HTTP Error ${response.status}`;
+                    let errorMessage = `HTTP ${response.status}`;
                     try {
                         const contentType = response.headers.get('content-type');
                         if (contentType && contentType.includes('application/json')) {
                             const errorData = await response.json();
                             errorMessage = errorData.error || errorMessage;
-                        } else {
-                            const errorText = await response.text();
-                            console.error('Server returned:', errorText);
-                            errorMessage = errorText.substring(0, 200) || errorMessage;
                         }
                     } catch (e) {
                         console.error('Error parsing error response:', e);
                     }
+                    
+                    if (response.status === 429) {
+                        throw new Error(translations[currentLanguage].rate_limit_error);
+                    }
+                    
                     throw new Error(errorMessage);
                 }
 
                 const data = await response.json();
-                console.log('Received data:', data);
 
                 if (!data.success) {
                     throw new Error(data.error || 'Unknown error');
@@ -1352,12 +1453,18 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             };
             
             if (elements.title) {
-                elements.title.innerHTML = '📖 <span data-text-key="generated_explanation">' + translations[currentLanguage].generated_explanation + '</span>';
+                elements.title.innerHTML = '📖 <span data-text-key="generated_explanation">' + 
+                    translations[currentLanguage].generated_explanation + '</span>';
             }
+            
             if (elements.content) elements.content.innerHTML = data.explanation;
             
             let metaText = `🤖 Mistral AI • ${data.processing_time}s • ${data.detail_level}`;
-            if (elements.meta) elements.meta.textContent = metaText;
+            if (data.from_cache) {
+                metaText += ` • <span class="cache-badge">💾 ${translations[currentLanguage].from_cache}</span>`;
+            }
+            
+            if (elements.meta) elements.meta.innerHTML = metaText;
 
             if (elements.result) elements.result.classList.add('active');
         }
@@ -1418,36 +1525,46 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 </html>'''
 
 if __name__ == '__main__':
-    print("🔢 MATHIA V3.0 - Explorateur Mathématique avec IA")
-    print("=" * 60)
+    print("=" * 70)
+    print("🔢 MATHIA V4.0 - Explorateur Mathématique avec IA")
+    print("=" * 70)
     
     try:
-        from mistralai import Mistral
-        print("✅ Dépendances OK")
-        
         port = int(os.environ.get('PORT', 5000))
         debug_mode = os.environ.get('FLASK_ENV') != 'production'
         
-        print(f"🌐 Port: {port}")
-        print(f"🔧 Debug: {debug_mode}")
-        print(f"🔑 Clés Mistral: {len(mathia.api_keys)} configurées")
+        print(f"\n⚙️  Configuration:")
+        print(f"   • Port: {port}")
+        print(f"   • Debug: {debug_mode}")
+        print(f"   • Clés API: {len(Config.API_KEYS)}")
+        print(f"   • Cache Max: {Config.CACHE_MAX_SIZE} entrées")
+        print(f"   • Rate Limit: {Config.RATE_LIMIT_REQUESTS} req/{Config.RATE_LIMIT_WINDOW}s")
         
         print("\n✨ Fonctionnalités:")
-        print("   • Exploration automatique avec Mistral AI")
-        print("   • Design moderne rouge/orange")
+        print("   • Exploration avec Mistral AI (Large + Small fallback)")
+        print("   • Cache LRU intelligent")
+        print("   • Rate limiting par IP")
+        print("   • Conversion Markdown → HTML")
         print("   • Support multilingue (FR/EN/ES)")
         print("   • 3 niveaux de détail")
-        print("   • Cache intelligent")
-        print("\n📍 Routes disponibles:")
-        print("   • GET  / - Interface principale")
-        print("   • POST /api/explore - Exploration de concepts")
-        print("   • GET  /api/stats - Statistiques")
-        print("   • GET  /health - Health check")
+        print("   • Statistiques en temps réel")
+        print("   • Thème clair/sombre persistant")
         
-        print("\n🚀 Démarrage de Mathia...")
+        print("\n📍 Routes:")
+        print("   • GET  /            → Interface utilisateur")
+        print("   • POST /api/explore → Exploration de concepts")
+        print("   • GET  /api/stats   → Statistiques")
+        print("   • GET  /health      → Health check")
+        
+        print("\n🚀 Démarrage du serveur...")
+        print("=" * 70)
+        
+        app.run(host='0.0.0.0', port=port, debug=debug_mode)
         
     except ImportError as e:
-        print(f"❌ ERREUR: {e}")
+        print(f"\n❌ ERREUR: Dépendance manquante - {e}")
+        print("   Installez: pip install flask mistralai markdown")
         exit(1)
-    
-    app.run(host='0.0.0.0', port=port, debug=debug_mode)
+    except Exception as e:
+        print(f"\n❌ ERREUR FATALE: {e}")
+        exit(1)
