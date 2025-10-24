@@ -30,7 +30,7 @@ def after_request(response):
 
 # Configuration
 class Config:
-    # Clés API Mistral (hardcodées pour facilité d'utilisation)
+    # Clés API Mistral
     API_KEYS = [
         'FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX',
         '9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF',
@@ -77,20 +77,6 @@ class RateLimiter:
         return True
 
 rate_limiter = RateLimiter()
-
-
-# Décorateur pour rate limiting
-def require_rate_limit(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        identifier = request.remote_addr
-        if not rate_limiter.is_allowed(identifier):
-            return jsonify({
-                'success': False,
-                'error': 'Trop de requêtes. Veuillez patienter.'
-            }), 429
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 # Cache LRU simple
@@ -403,11 +389,9 @@ def index():
 
 @app.route('/api/explore', methods=['POST', 'OPTIONS'])
 def explore():
-    """API d'exploration de concepts - CORRIGÉ SANS RATE LIMIT"""
+    """API d'exploration de concepts"""
     
     logger.info(f"📨 Requête reçue: {request.method} depuis {request.remote_addr}")
-    logger.info(f"URL complète: {request.url}")
-    logger.info(f"Path: {request.path}")
     
     # CORS preflight
     if request.method == 'OPTIONS':
@@ -415,10 +399,6 @@ def explore():
         return '', 204
     
     try:
-        # Log détaillé pour débogage
-        logger.info(f"Content-Type: {request.content_type}")
-        logger.info(f"Headers: {dict(request.headers)}")
-        
         # Validation du Content-Type
         if not request.is_json:
             logger.error(f"❌ Content-Type invalide: {request.content_type}")
@@ -441,41 +421,36 @@ def explore():
         language = data.get('language', 'fr')
         detail_level = data.get('detail_level', 'moyen')
         
-        logger.info(f"📝 Paramètres reçus: concept='{concept}', language={language}, detail_level={detail_level}")
+        logger.info(f"📝 Paramètres: concept='{concept}', langue={language}, détail={detail_level}")
         
-        # Validation de la langue
+        # Validation
         if language not in ['fr', 'en', 'es']:
-            logger.warning(f"Langue invalide: {language}, utilisation de 'fr'")
             language = 'fr'
         
-        # Validation du niveau de détail
         if detail_level not in ['court', 'moyen', 'long']:
-            logger.warning(f"Niveau invalide: {detail_level}, utilisation de 'moyen'")
             detail_level = 'moyen'
         
         if not concept:
-            logger.error("❌ Concept manquant")
             return jsonify({
                 'success': False,
                 'error': 'Le paramètre "concept" est requis'
             }), 400
         
         # Traitement
-        logger.info(f"🚀 Démarrage du traitement...")
         result = mathia.process_concept(concept, language, detail_level)
         
         if not result.get('success'):
-            logger.error(f"❌ Échec du traitement: {result.get('error')}")
+            logger.error(f"❌ Échec: {result.get('error')}")
             return jsonify(result), 500
         
-        logger.info(f"✅ Traitement réussi en {result.get('processing_time')}s")
+        logger.info(f"✅ Succès en {result.get('processing_time')}s")
         return jsonify(result), 200
         
     except Exception as e:
-        logger.error(f"💥 Erreur endpoint: {str(e)}", exc_info=True)
+        logger.error(f"💥 Erreur: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
-            'error': f'Erreur interne du serveur: {str(e)}'
+            'error': f'Erreur interne: {str(e)}'
         }), 500
 
 
@@ -486,29 +461,25 @@ def get_stats():
         stats = mathia.stats.copy()
         stats['cache_size'] = mathia.cache.size()
         stats['cache_max_size'] = Config.CACHE_MAX_SIZE
-        logger.info(f"📊 Stats demandées: {stats}")
         return jsonify(stats), 200
     except Exception as e:
         logger.error(f"Erreur stats: {str(e)}")
-        return jsonify({'error': 'Erreur lors de la récupération des stats'}), 500
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/health')
 def health():
     """Health check endpoint"""
-    health_data = {
+    return jsonify({
         'status': 'OK',
         'service': 'Mathia Explorer',
-        'version': '4.0',
+        'version': '4.1',
         'api_keys_configured': len(Config.API_KEYS),
-        'cache_size': mathia.cache.size(),
-        'stats': mathia.stats
-    }
-    logger.info(f"❤️ Health check: {health_data['status']}")
-    return jsonify(health_data), 200
+        'cache_size': mathia.cache.size()
+    }), 200
 
 
-# Template HTML complet avec tous les styles et fonctionnalités
+# Template HTML CORRIGÉ avec styles fixes
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -519,29 +490,54 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         :root {
-            --bg-primary: #f0f4f8;
-            --bg-secondary: #dbe4ec;
-            --bg-tertiary: #ffffff;
-            --text-primary: #0d1b2a;
-            --text-secondary: #415a77;
-            --accent: #e63946;
-            --accent-secondary: #f77f00;
-            --accent-hover: #d62828;
-            --border: #cbd5e1;
-            --shadow: rgba(230, 57, 70, 0.15);
+            --gradient-start: #e63946;
+            --gradient-end: #f77f00;
         }
         
-        [data-theme="dark"] {
+        /* THÈME LIGHT (par défaut) */
+        body {
+            --bg-primary: linear-gradient(135deg, #e63946 0%, #f77f00 100%);
+            --bg-secondary: rgba(255, 255, 255, 0.25);
+            --bg-tertiary: rgba(255, 255, 255, 0.3);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.95);
+            --text-tertiary: rgba(255, 255, 255, 0.9);
+            --border-color: rgba(255, 255, 255, 0.3);
+            --border-color-strong: rgba(255, 255, 255, 0.4);
+            --shadow: rgba(0, 0, 0, 0.1);
+            --shadow-strong: rgba(0, 0, 0, 0.15);
+            --input-bg: rgba(255, 255, 255, 0.3);
+            --input-border: rgba(255, 255, 255, 0.4);
+            --input-focus-bg: rgba(255, 255, 255, 0.4);
+            --input-focus-border: rgba(255, 255, 255, 0.6);
+            --input-focus-shadow: rgba(255, 255, 255, 0.2);
+            --button-bg: rgba(255, 255, 255, 0.25);
+            --button-active: rgba(255, 255, 255, 0.5);
+            --button-primary: rgba(255, 255, 255, 0.4);
+            --placeholder-color: rgba(255, 255, 255, 0.8);
+        }
+        
+        /* THÈME DARK */
+        body[data-theme="dark"] {
             --bg-primary: #0d1b2a;
             --bg-secondary: #1b263b;
             --bg-tertiary: #415a77;
             --text-primary: #e0e1dd;
             --text-secondary: #cbd5e1;
-            --accent: #e63946;
-            --accent-secondary: #f77f00;
-            --accent-hover: #ff4757;
-            --border: #415a77;
-            --shadow: rgba(230, 57, 70, 0.25);
+            --text-tertiary: #94a3b8;
+            --border-color: #415a77;
+            --border-color-strong: #4a5f7f;
+            --shadow: rgba(0, 0, 0, 0.3);
+            --shadow-strong: rgba(0, 0, 0, 0.4);
+            --input-bg: #0d1b2a;
+            --input-border: #415a77;
+            --input-focus-bg: #1b263b;
+            --input-focus-border: #e63946;
+            --input-focus-shadow: rgba(230, 57, 70, 0.2);
+            --button-bg: #1b263b;
+            --button-active: #e63946;
+            --button-primary: #e63946;
+            --placeholder-color: #94a3b8;
         }
         
         body {
@@ -554,388 +550,372 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             transition: all 0.3s ease;
         }
         
-        [data-theme="light"] body {
-            background: linear-gradient(135deg, #e63946 0%, #f77f00 100%);
-            color: white;
-        }
-        
+        /* Header fixe */
         .top-header {
-            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-            background: rgba(255, 255, 255, 0.25);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: var(--bg-secondary);
             backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+            border-bottom: 1px solid var(--border-color);
             padding: 15px 30px;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        
-        [data-theme="dark"] .top-header {
-            background: rgba(13, 27, 42, 0.95);
-            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         .logo {
             font-size: 1.2rem;
             font-weight: 700;
-            color: white;
+            color: var(--text-primary);
             text-decoration: none;
         }
         
-        [data-theme="dark"] .logo {
-            color: var(--text-primary);
-        }
-        
         .header-controls {
-            display: flex; gap: 15px; align-items: center;
+            display: flex;
+            gap: 15px;
+            align-items: center;
         }
         
-        .language-selector {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            border-radius: 15px; padding: 10px 15px; 
-            cursor: pointer; font-size: 0.9rem;
-            color: var(--text-primary); 
+        .language-selector,
+        .theme-toggle {
+            background: var(--button-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 15px;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: var(--text-primary);
             transition: all 0.2s ease;
             box-shadow: 0 2px 10px var(--shadow);
-        }
-        
-        [data-theme="light"] .language-selector {
-            background: rgba(255, 255, 255, 0.3);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.4);
         }
         
         .theme-toggle {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            border-radius: 15px; padding: 12px; 
-            cursor: pointer; font-size: 1.2rem; 
-            transition: all 0.2s ease;
-            color: var(--text-primary);
-            box-shadow: 0 2px 10px var(--shadow);
+            padding: 12px;
+            font-size: 1.2rem;
         }
         
-        [data-theme="light"] .theme-toggle {
-            background: rgba(255, 255, 255, 0.3);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.4);
+        .language-selector:hover,
+        .theme-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px var(--shadow-strong);
         }
         
+        /* Container principal */
         .container {
-            flex: 1; padding: 100px 30px 30px; max-width: 1200px; margin: 0 auto; width: 100%;
-            display: flex; flex-direction: column; gap: 30px;
+            flex: 1;
+            padding: 100px 30px 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
         }
         
+        /* Section titre */
         .title-section {
-            text-align: center; margin-bottom: 20px;
+            text-align: center;
+            margin-bottom: 20px;
         }
         
         .title {
-            font-size: 2.8rem; font-weight: 700; margin-bottom: 10px; color: white;
-            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        }
-        
-        [data-theme="dark"] .title {
+            font-size: 2.8rem;
+            font-weight: 700;
+            margin-bottom: 10px;
             color: var(--text-primary);
-            text-shadow: none;
+            text-shadow: 0 2px 10px var(--shadow);
         }
         
-        .subtitle { 
-            color: rgba(255,255,255,0.95); 
-            font-size: 1.15rem; 
-        }
-        
-        [data-theme="dark"] .subtitle {
+        .subtitle {
             color: var(--text-secondary);
+            font-size: 1.15rem;
         }
         
+        /* Stats */
         .stats {
-            display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; flex-wrap: wrap;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
         }
         
         .stat-item {
-            background: rgba(255, 255, 255, 0.25);
+            background: var(--bg-secondary);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            padding: 10px 20px; border-radius: 15px;
-            font-size: 0.9rem; color: rgba(255,255,255,0.95);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border-color);
+            padding: 10px 20px;
+            border-radius: 15px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            box-shadow: 0 4px 15px var(--shadow);
         }
         
-        [data-theme="dark"] .stat-item {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-            backdrop-filter: none;
-        }
-        
+        /* Section formulaire */
         .form-section {
-            background: rgba(255, 255, 255, 0.25);
+            background: var(--bg-secondary);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 25px; padding: 30px;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border-color);
+            border-radius: 25px;
+            padding: 30px;
+            box-shadow: 0 8px 30px var(--shadow);
         }
         
-        [data-theme="dark"] .form-section {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            backdrop-filter: none;
+        .form-group {
+            margin-bottom: 25px;
         }
-        
-        .form-group { margin-bottom: 25px; }
         
         .label {
-            display: block; color: white; font-weight: 600; margin-bottom: 12px; font-size: 1rem;
-        }
-        
-        [data-theme="dark"] .label {
+            display: block;
             color: var(--text-primary);
+            font-weight: 600;
+            margin-bottom: 12px;
+            font-size: 1rem;
         }
         
         .input {
-            width: 100%; padding: 18px 24px; 
-            background: rgba(255, 255, 255, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.4);
-            border-radius: 20px; font-size: 1rem; color: white; outline: none; 
-            transition: all 0.3s ease;
-            backdrop-filter: blur(20px);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        }
-        
-        [data-theme="dark"] .input {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
+            width: 100%;
+            padding: 18px 24px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 20px;
+            font-size: 1rem;
             color: var(--text-primary);
-            backdrop-filter: none;
+            outline: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px var(--shadow);
         }
         
         .input:focus {
-            background: rgba(255, 255, 255, 0.4);
-            border-color: rgba(255, 255, 255, 0.6);
-            box-shadow: 0 0 0 3px rgba(255,255,255,0.2);
+            background: var(--input-focus-bg);
+            border-color: var(--input-focus-border);
+            box-shadow: 0 0 0 3px var(--input-focus-shadow);
         }
         
-        [data-theme="dark"] .input:focus {
-            background: var(--bg-secondary);
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.2);
+        .input::placeholder {
+            color: var(--placeholder-color);
         }
         
-        .input::placeholder { color: rgba(255,255,255,0.8); }
-        
-        [data-theme="dark"] .input::placeholder {
-            color: var(--text-secondary);
+        /* Sélecteur de détail */
+        .detail-selector {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
         }
-        
-        .detail-selector { display: flex; gap: 15px; flex-wrap: wrap; }
         
         .detail-btn {
-            background: rgba(255, 255, 255, 0.25);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 15px; padding: 12px 20px; font-size: 0.9rem; 
-            color: rgba(255,255,255,0.9);
-            cursor: pointer; transition: all 0.2s ease; flex: 1; min-width: 150px;
-            backdrop-filter: blur(20px);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            background: var(--button-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 15px;
+            padding: 12px 20px;
+            font-size: 0.9rem;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            flex: 1;
+            min-width: 150px;
+            box-shadow: 0 4px 15px var(--shadow);
         }
         
-        [data-theme="dark"] .detail-btn {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-            backdrop-filter: none;
+        .detail-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px var(--shadow-strong);
         }
         
         .detail-btn.active {
-            background: rgba(255, 255, 255, 0.5); 
-            color: white; 
-            border-color: rgba(255, 255, 255, 0.6);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+            background: var(--button-active);
+            color: var(--text-primary);
+            border-color: var(--border-color-strong);
+            font-weight: 600;
         }
         
-        [data-theme="dark"] .detail-btn.active {
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
+        /* Suggestions */
+        .suggestions {
+            margin-top: 15px;
         }
         
-        .suggestions { margin-top: 15px; }
-        .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .suggestion-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
         
         .chip {
-            background: rgba(255, 255, 255, 0.25);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 20px; padding: 8px 16px; font-size: 0.8rem; 
-            color: rgba(255,255,255,0.95);
-            cursor: pointer; transition: all 0.2s ease;
-            backdrop-filter: blur(20px);
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            background: var(--button-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 10px var(--shadow);
         }
         
-        [data-theme="dark"] .chip {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-            backdrop-filter: none;
+        .chip:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px var(--shadow-strong);
+            background: var(--button-active);
+        }
+        
+        /* Boutons */
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
         }
         
         .btn {
-            background: rgba(255, 255, 255, 0.25);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 20px; padding: 18px 36px; font-size: 1.1rem; font-weight: 600;
-            color: rgba(255,255,255,0.95); cursor: pointer; transition: all 0.2s ease;
-            backdrop-filter: blur(20px);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            background: var(--button-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 18px 36px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px var(--shadow);
         }
         
-        [data-theme="dark"] .btn {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-            backdrop-filter: none;
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px var(--shadow-strong);
         }
         
         .btn-primary {
-            background: rgba(255, 255, 255, 0.4); 
-            color: white;
-            border-color: rgba(255, 255, 255, 0.5);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+            background: var(--button-primary);
+            color: #ffffff;
+            border-color: var(--border-color-strong);
         }
         
-        [data-theme="dark"] .btn-primary {
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
         }
         
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        
-        .controls {
-            display: flex; justify-content: center; align-items: center;
-            flex-wrap: wrap; gap: 15px;
-        }
-        
+        /* Status */
         .status {
-            background: rgba(255, 255, 255, 0.25);
+            background: var(--bg-secondary);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            border: 1px solid var(--border-color);
             border-radius: 20px;
-            padding: 25px; display: none;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+            padding: 25px;
+            display: none;
+            box-shadow: 0 8px 30px var(--shadow);
         }
         
-        [data-theme="dark"] .status {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            backdrop-filter: none;
+        .status.active {
+            display: block;
+            animation: slideDown 0.3s ease;
         }
-        
-        .status.active { display: block; animation: slideDown 0.3s ease; }
         
         .status-text {
-            color: white; font-weight: 500; margin-bottom: 15px;
-            display: flex; align-items: center;
-        }
-        
-        [data-theme="dark"] .status-text {
             color: var(--text-primary);
+            font-weight: 500;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
         }
         
         .progress-bar {
-            width: 100%; height: 8px; 
-            background: rgba(255, 255, 255, 0.3); border-radius: 10px; overflow: hidden;
-        }
-        
-        [data-theme="dark"] .progress-bar {
-            background: var(--bg-primary);
+            width: 100%;
+            height: 8px;
+            background: var(--input-bg);
+            border-radius: 10px;
+            overflow: hidden;
         }
         
         .progress-fill {
-            height: 100%; border-radius: 10px; width: 0%; transition: width 0.3s ease;
-            background: linear-gradient(90deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7));
+            height: 100%;
+            border-radius: 10px;
+            width: 0%;
+            transition: width 0.3s ease;
+            background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
         }
         
-        [data-theme="dark"] .progress-fill {
-            background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
-        }
-        
+        /* Résultat */
         .result {
-            background: rgba(255, 255, 255, 0.25);
+            background: var(--bg-secondary);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            border: 1px solid var(--border-color);
             border-radius: 25px;
-            padding: 30px; display: none; position: relative;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            display: none;
+            box-shadow: 0 8px 30px var(--shadow);
         }
         
-        [data-theme="dark"] .result {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            backdrop-filter: none;
+        .result.active {
+            display: block;
+            animation: slideUp 0.5s ease;
         }
-        
-        .result.active { display: block; animation: slideUp 0.5s ease; }
         
         .result-header {
-            display: flex; justify-content: space-between; align-items: flex-start;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
             margin-bottom: 15px;
         }
         
         .result-title {
-            color: white; font-size: 1.3rem; font-weight: 600;
-            padding-bottom: 15px; border-bottom: 2px solid rgba(255, 255, 255, 0.3);
-            flex: 1; margin-right: 20px;
-        }
-        
-        [data-theme="dark"] .result-title {
             color: var(--text-primary);
-            border-bottom: 2px solid var(--border);
+            font-size: 1.3rem;
+            font-weight: 600;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--border-color);
+            flex: 1;
+            margin-right: 20px;
         }
         
         .copy-btn {
-            background: rgba(255, 255, 255, 0.25);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 12px; padding: 10px; cursor: pointer; font-size: 1rem; 
-            color: rgba(255,255,255,0.9); transition: all 0.2s ease;
-            backdrop-filter: blur(20px);
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-        
-        [data-theme="dark"] .copy-btn {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
+            background: var(--button-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px;
+            cursor: pointer;
+            font-size: 1rem;
             color: var(--text-primary);
-            backdrop-filter: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 10px var(--shadow);
         }
         
-        .result-meta { color: rgba(255,255,255,0.9); font-size: 0.9rem; margin-bottom: 20px; }
+        .copy-btn:hover {
+            transform: scale(1.1);
+        }
         
-        [data-theme="dark"] .result-meta {
+        .result-meta {
             color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 20px;
         }
         
-        .result-content { 
-            color: rgba(255,255,255,0.95); 
-            line-height: 1.7; 
-            font-size: 1rem; 
-        }
-        
-        [data-theme="dark"] .result-content {
+        .result-content {
             color: var(--text-primary);
+            line-height: 1.7;
+            font-size: 1rem;
         }
         
-        .result-content p { margin-bottom: 15px; }
-        .result-content strong { color: white; font-weight: 600; }
+        .result-content p {
+            margin-bottom: 15px;
+        }
         
-        [data-theme="dark"] .result-content strong {
+        .result-content strong {
             color: var(--text-primary);
+            font-weight: 600;
         }
         
         .cache-badge {
             display: inline-block;
-            background: rgba(74, 222, 128, 0.3);
-            border: 1px solid rgba(74, 222, 128, 0.5);
-            color: white;
+            background: rgba(74, 222, 128, 0.2);
+            border: 1px solid rgba(74, 222, 128, 0.4);
+            color: #4ade80;
             padding: 4px 12px;
             border-radius: 12px;
             font-size: 0.85rem;
@@ -943,53 +923,134 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             margin-left: 10px;
         }
         
-        [data-theme="dark"] .cache-badge {
-            background: rgba(74, 222, 128, 0.2);
-            border-color: rgba(74, 222, 128, 0.4);
-            color: #4ade80;
-        }
-        
+        /* Loading spinner */
         .loading {
-            display: inline-block; width: 20px; height: 20px; margin-right: 10px;
-            border: 3px solid rgba(255,255,255,0.4); border-radius: 50%;
-            border-top-color: white; animation: spin 1s ease-in-out infinite;
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            border: 3px solid var(--border-color);
+            border-radius: 50%;
+            border-top-color: var(--text-primary);
+            animation: spin 1s ease-in-out infinite;
         }
         
-        [data-theme="dark"] .loading {
-            border: 3px solid var(--text-secondary);
-            border-top-color: var(--accent);
-        }
-        
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-        
+        /* Notifications */
         .notification {
-            position: fixed; top: 90px; right: 20px; padding: 15px 25px;
-            border-radius: 15px; color: white; font-weight: 500; z-index: 1000;
-            transform: translateX(400px); transition: all 0.3s ease;
-            backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.3);
+            position: fixed;
+            top: 90px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 15px;
+            color: white;
+            font-weight: 500;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(20px);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         }
         
-        .notification.show { transform: translateX(0); }
-        .notification.error { background: rgba(214, 40, 40, 0.95); }
-        .notification.success { background: rgba(34, 197, 94, 0.95); }
-        .notification.info { background: rgba(247, 127, 0, 0.95); }
+        .notification.show {
+            transform: translateX(0);
+        }
         
+        .notification.error {
+            background: rgba(214, 40, 40, 0.95);
+        }
+        
+        .notification.success {
+            background: rgba(34, 197, 94, 0.95);
+        }
+        
+        .notification.info {
+            background: rgba(247, 127, 0, 0.95);
+        }
+        
+        /* Animations */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Responsive */
         @media (max-width: 768px) {
-            .top-header { padding: 15px 20px; flex-direction: column; gap: 15px; }
-            .header-controls { width: 100%; justify-content: space-between; }
-            .container { padding: 140px 20px 20px; }
-            .title { font-size: 2rem; }
-            .stats { gap: 10px; }
-            .stat-item { padding: 8px 15px; font-size: 0.8rem; }
-            .detail-selector { flex-direction: column; gap: 10px; }
-            .detail-btn { min-width: auto; }
-            .controls { flex-direction: column; gap: 10px; }
-            .btn { width: 100%; }
-            .result-header { flex-direction: column; align-items: flex-start; }
-            .result-title { margin-right: 0; margin-bottom: 15px; }
+            .top-header {
+                padding: 15px 20px;
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .header-controls {
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            .container {
+                padding: 140px 20px 20px;
+            }
+            
+            .title {
+                font-size: 2rem;
+            }
+            
+            .stats {
+                gap: 10px;
+            }
+            
+            .stat-item {
+                padding: 8px 15px;
+                font-size: 0.8rem;
+            }
+            
+            .detail-selector {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .detail-btn {
+                min-width: auto;
+            }
+            
+            .controls {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .btn {
+                width: 100%;
+            }
+            
+            .result-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .result-title {
+                margin-right: 0;
+                margin-bottom: 15px;
+            }
         }
     </style>
 </head>
@@ -1028,7 +1089,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                            data-placeholder-key="search_placeholder" required>
                     
                     <div class="suggestions">
-                        <span style="color: rgba(255,255,255,0.9); font-size: 0.9rem;">💡 <span data-text-key="popular_suggestions">Suggestions populaires:</span></span>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">💡 <span data-text-key="popular_suggestions">Suggestions populaires:</span></span>
                         <div class="suggestion-chips" id="suggestionChips"></div>
                     </div>
                 </div>
@@ -1213,7 +1274,9 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         function loadTheme() {
             const savedTheme = localStorage.getItem('mathia_theme') || 'light';
             currentTheme = savedTheme;
-            document.documentElement.setAttribute('data-theme', currentTheme);
+            if (currentTheme === 'dark') {
+                document.body.setAttribute('data-theme', 'dark');
+            }
             updateThemeToggle();
         }
 
@@ -1227,7 +1290,13 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
         function toggleTheme() {
             currentTheme = currentTheme === 'light' ? 'dark' : 'light';
-            document.documentElement.setAttribute('data-theme', currentTheme);
+            
+            if (currentTheme === 'dark') {
+                document.body.setAttribute('data-theme', 'dark');
+            } else {
+                document.body.removeAttribute('data-theme');
+            }
+            
             localStorage.setItem('mathia_theme', currentTheme);
             updateThemeToggle();
         }
@@ -1381,14 +1450,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     detail_level: detailLevel
                 };
                 
-                // LOG DÉTAILLÉ
-                console.log('🚀 ========== DÉBUT REQUÊTE ==========');
-                console.log('📍 URL appelée:', window.location.origin + '/api/explore');
-                console.log('📦 Données envoyées:', requestData);
-                console.log('🌐 Headers:', {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                });
+                console.log('🚀 Requête:', requestData);
                 
                 updateProgress(20);
                 updateStatus(translations[currentLanguage].analyzing);
@@ -1402,40 +1464,25 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     body: JSON.stringify(requestData)
                 });
 
-                console.log('📡 ========== RÉPONSE REÇUE ==========');
-                console.log('📊 Status:', response.status, response.statusText);
-                console.log('🔗 URL réponse:', response.url);
-                console.log('📋 Headers réponse:', [...response.headers.entries()]);
+                console.log('📡 Réponse:', response.status);
 
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
 
                 if (!response.ok) {
-                    console.error('❌ ========== ERREUR HTTP ==========');
-                    console.error('Status Code:', response.status);
-                    
                     let errorMessage = `HTTP ${response.status}`;
                     try {
                         const contentType = response.headers.get('content-type');
-                        console.log('Content-Type de l\'erreur:', contentType);
                         
                         if (contentType && contentType.includes('application/json')) {
                             const errorData = await response.json();
-                            console.error('❌ Données d\'erreur JSON:', errorData);
                             errorMessage = errorData.error || errorMessage;
                         } else {
                             const errorText = await response.text();
-                            console.error('❌ Texte d\'erreur:', errorText);
                             errorMessage = errorText.substring(0, 200);
                         }
                     } catch (e) {
-                        console.error('❌ Impossible de parser l\'erreur:', e);
-                    }
-                    
-                    if (response.status === 404) {
-                        console.error('❌ ERREUR 404 - La route /api/explore n\'existe pas !');
-                        console.error('Vérifiez que le serveur Flask est bien démarré');
-                        console.error('URL tentée:', response.url);
+                        console.error('Erreur parsing:', e);
                     }
                     
                     if (response.status === 429) {
@@ -1446,8 +1493,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 }
 
                 const data = await response.json();
-                console.log('✅ ========== SUCCÈS ==========');
-                console.log('📦 Données reçues:', data);
+                console.log('✅ Succès');
 
                 if (!data.success) {
                     throw new Error(data.error || 'Unknown error');
@@ -1464,10 +1510,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 showNotification(translations[currentLanguage].explanation_generated, 'success');
 
             } catch (error) {
-                console.error('💥 ========== ERREUR CATCH ==========');
-                console.error('Type:', error.name);
-                console.error('Message:', error.message);
-                console.error('Stack:', error.stack);
+                console.error('💥 Erreur:', error);
                 showNotification(error.message || translations[currentLanguage].processing_error, 'error');
                 hideStatus();
             } finally {
@@ -1584,7 +1627,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
 if __name__ == '__main__':
     print("=" * 70)
-    print("🔢 MATHIA V4.0 - Explorateur Mathématique avec IA")
+    print("🔢 MATHIA V4.1 - Explorateur Mathématique avec IA (CORRIGÉ)")
     print("=" * 70)
     
     try:
@@ -1596,17 +1639,14 @@ if __name__ == '__main__':
         print(f"   • Debug: {debug_mode}")
         print(f"   • Clés API: {len(Config.API_KEYS)}")
         print(f"   • Cache Max: {Config.CACHE_MAX_SIZE} entrées")
-        print(f"   • Rate Limit: {Config.RATE_LIMIT_REQUESTS} req/{Config.RATE_LIMIT_WINDOW}s")
         
-        print("\n✨ Fonctionnalités:")
-        print("   • Exploration avec Mistral AI (Large + Small fallback)")
-        print("   • Cache LRU intelligent")
-        print("   • Rate limiting par IP")
-        print("   • Conversion Markdown → HTML")
-        print("   • Support multilingue (FR/EN/ES)")
-        print("   • 3 niveaux de détail")
-        print("   • Statistiques en temps réel")
-        print("   • Thème clair/sombre persistant")
+        print("\n✨ Corrections apportées:")
+        print("   ✅ Système de thème CSS corrigé (variables CSS)")
+        print("   ✅ Contraste texte/fond optimisé pour les deux thèmes")
+        print("   ✅ Thème light par défaut sans data-attribute")
+        print("   ✅ Thème dark avec data-theme='dark'")
+        print("   ✅ Tous les éléments visibles et lisibles")
+        print("   ✅ Transitions fluides entre thèmes")
         
         print("\n📍 Routes:")
         print("   • GET  /            → Interface utilisateur")
