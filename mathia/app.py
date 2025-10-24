@@ -9,16 +9,16 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import traceback
 
-# Configuration du logging DÉTAILLÉ
+# Configuration du logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# CORS Configuration RENFORCÉE
+# CORS Configuration
 @app.after_request
 def after_request(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
@@ -29,8 +29,12 @@ def after_request(response):
 
 # Configuration
 class Config:
-    # 🔑 CLÉS API - À CONFIGURER !
-    API_KEYS = os.environ.get('MISTRAL_API_KEY', '').split(',') if os.environ.get('MISTRAL_API_KEY') else []
+    # 🔑 Chargement des 3 clés API
+    API_KEYS = []
+    for i in range(1, 4):
+        key = os.environ.get(f'MISTRAL_KEY_{i}')
+        if key:
+            API_KEYS.append(key.strip())
     
     # Sécurité
     MAX_CONCEPT_LENGTH = 200
@@ -44,18 +48,31 @@ class Config:
     MISTRAL_MODEL_FALLBACK = "mistral-small-latest"
     MISTRAL_MAX_TOKENS = 1200
     MISTRAL_TEMPERATURE = 0.7
+    
+    # Rate limiting
+    MAX_RETRIES_PER_KEY = 2
+    RETRY_DELAY = 1  # secondes
 
 # Vérification des clés API
-if not Config.API_KEYS or Config.API_KEYS == ['']:
-    logger.warning("⚠️ AUCUNE CLÉ API MISTRAL CONFIGURÉE !")
-    logger.warning("⚠️ Mode DÉMO activé - Les explications seront simulées")
-    logger.warning("⚠️ Pour utiliser Mistral AI, définissez: export MISTRAL_API_KEY='votre_clé'")
-    DEMO_MODE = True
+if not Config.API_KEYS:
+    logger.error("=" * 70)
+    logger.error("❌ ERREUR CRITIQUE : AUCUNE CLÉ API MISTRAL CONFIGURÉE !")
+    logger.error("=" * 70)
+    logger.error("Définissez les variables d'environnement :")
+    logger.error("  export MISTRAL_KEY_1='FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX'")
+    logger.error("  export MISTRAL_KEY_2='9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF'")
+    logger.error("  export MISTRAL_KEY_3='cvkQHVcomFFEW47G044x2p4DTyk5BIc7'")
+    logger.error("=" * 70)
+    raise RuntimeError("Clés API Mistral manquantes. Application arrêtée.")
 else:
+    logger.info("=" * 70)
     logger.info(f"✅ {len(Config.API_KEYS)} clé(s) API Mistral configurée(s)")
-    DEMO_MODE = False
+    for i, key in enumerate(Config.API_KEYS, 1):
+        masked_key = key[:8] + "..." + key[-4:] if len(key) > 12 else "***"
+        logger.info(f"   Clé {i}: {masked_key}")
+    logger.info("=" * 70)
 
-# Cache LRU simple
+# Cache LRU
 class LRUCache:
     def __init__(self, max_size=100):
         self.cache = {}
@@ -83,135 +100,65 @@ class LRUCache:
         return len(self.cache)
 
 class MathiaExplorer:
-    """Explorateur mathématique avec IA Mistral"""
+    """Explorateur mathématique avec IA Mistral (Production)"""
     
     def __init__(self):
         self.api_keys = Config.API_KEYS
         self.current_key_index = 0
         self.cache = LRUCache(max_size=Config.CACHE_MAX_SIZE)
+        
+        # Statistiques par clé
+        self.key_stats = {i: {'used': 0, 'errors': 0, 'rate_limits': 0} 
+                          for i in range(len(self.api_keys))}
+        
         self.stats = {
             'requests': 0,
             'cache_hits': 0,
             'concepts_explored': 0,
             'errors': 0,
-            'avg_processing_time': 0
+            'avg_processing_time': 0,
+            'total_api_calls': 0
         }
         self.processing_times = []
         
-        logger.info("✅ Mathia Explorer initialisé")
+        logger.info("✅ Mathia Explorer initialisé en mode PRODUCTION")
     
-    def generate_demo_explanation(self, concept, language, detail_level):
-        """Génère une explication démo quand les clés API ne sont pas configurées"""
-        
-        translations = {
-            'fr': {
-                'title': 'Explication Démo',
-                'intro': f"Ceci est une explication de démonstration pour le concept : **{concept}**",
-                'warning': "⚠️ Mode Démonstration",
-                'warning_text': "Pour obtenir des explications réelles générées par l'IA Mistral, configurez votre clé API.",
-                'definition': "Définition",
-                'definition_text': f"Le concept de '{concept}' est un élément fondamental en mathématiques.",
-                'explanation': "Explication",
-                'explanation_text': "En mode démo, cette section contiendrait une explication détaillée générée par Mistral AI.",
-                'examples': "Exemples",
-                'examples_text': "Des exemples concrets seraient fournis ici avec l'IA configurée.",
-                'howto': "Comment configurer l'API",
-                'step1': "1. Créez un compte sur console.mistral.ai",
-                'step2': "2. Générez une clé API",
-                'step3': "3. Définissez la variable d'environnement: export MISTRAL_API_KEY='votre_clé'",
-                'step4': "4. Redémarrez l'application"
-            },
-            'en': {
-                'title': 'Demo Explanation',
-                'intro': f"This is a demo explanation for the concept: **{concept}**",
-                'warning': "⚠️ Demo Mode",
-                'warning_text': "To get real AI-generated explanations from Mistral, configure your API key.",
-                'definition': "Definition",
-                'definition_text': f"The concept of '{concept}' is a fundamental element in mathematics.",
-                'explanation': "Explanation",
-                'explanation_text': "In demo mode, this section would contain a detailed explanation generated by Mistral AI.",
-                'examples': "Examples",
-                'examples_text': "Concrete examples would be provided here with configured AI.",
-                'howto': "How to configure the API",
-                'step1': "1. Create an account on console.mistral.ai",
-                'step2': "2. Generate an API key",
-                'step3': "3. Set environment variable: export MISTRAL_API_KEY='your_key'",
-                'step4': "4. Restart the application"
-            },
-            'es': {
-                'title': 'Explicación Demo',
-                'intro': f"Esta es una explicación de demostración del concepto: **{concept}**",
-                'warning': "⚠️ Modo Demostración",
-                'warning_text': "Para obtener explicaciones reales generadas por IA de Mistral, configure su clave API.",
-                'definition': "Definición",
-                'definition_text': f"El concepto de '{concept}' es un elemento fundamental en matemáticas.",
-                'explanation': "Explicación",
-                'explanation_text': "En modo demo, esta sección contendría una explicación detallada generada por Mistral AI.",
-                'examples': "Ejemplos",
-                'examples_text': "Se proporcionarían ejemplos concretos aquí con la IA configurada.",
-                'howto': "Cómo configurar la API",
-                'step1': "1. Cree una cuenta en console.mistral.ai",
-                'step2': "2. Genere una clave API",
-                'step3': "3. Defina la variable de entorno: export MISTRAL_API_KEY='su_clave'",
-                'step4': "4. Reinicie la aplicación"
-            }
-        }
-        
-        t = translations.get(language, translations['fr'])
-        
-        return f"""
-<div style="background: rgba(255, 193, 7, 0.1); border: 2px solid rgba(255, 193, 7, 0.5); border-radius: 10px; padding: 20px; margin-bottom: 20px;">
-    <h3>⚠️ {t['warning']}</h3>
-    <p>{t['warning_text']}</p>
-</div>
-
-<h2>{t['title']}</h2>
-<p>{t['intro']}</p>
-
-<h3>📖 {t['definition']}</h3>
-<p>{t['definition_text']}</p>
-
-<h3>💡 {t['explanation']}</h3>
-<p>{t['explanation_text']}</p>
-
-<h3>📝 {t['examples']}</h3>
-<p>{t['examples_text']}</p>
-
-<div style="background: rgba(33, 150, 243, 0.1); border: 2px solid rgba(33, 150, 243, 0.5); border-radius: 10px; padding: 20px; margin-top: 30px;">
-    <h3>🔧 {t['howto']}</h3>
-    <p><strong>{t['step1']}</strong></p>
-    <p><strong>{t['step2']}</strong></p>
-    <p><strong>{t['step3']}</strong></p>
-    <p><strong>{t['step4']}</strong></p>
-</div>
-"""
+    def get_next_key_index(self):
+        """Rotation intelligente des clés"""
+        index = self.current_key_index % len(self.api_keys)
+        self.current_key_index += 1
+        return index
     
-    def call_mistral_with_retry(self, prompt, max_retries=None):
-        """Appelle Mistral avec retry"""
-        if DEMO_MODE:
-            time.sleep(1)  # Simule le délai
-            return None  # Retourne None pour déclencher le mode démo
-        
+    def call_mistral_with_retry(self, prompt):
+        """Appelle Mistral avec rotation automatique des clés"""
         try:
             from mistralai import Mistral
         except ImportError:
             logger.error("❌ Module mistralai non installé: pip install mistralai")
-            return None
-        
-        if max_retries is None:
-            max_retries = len(self.api_keys)
+            raise RuntimeError("Module mistralai manquant")
         
         last_exception = None
+        keys_tried = []
         
-        for attempt in range(max_retries):
+        # Essayer toutes les clés disponibles
+        for attempt in range(len(self.api_keys) * Config.MAX_RETRIES_PER_KEY):
+            key_index = self.get_next_key_index()
+            api_key = self.api_keys[key_index]
+            
+            # Éviter de réessayer immédiatement la même clé
+            if len(keys_tried) > 0 and keys_tried[-1] == key_index:
+                continue
+            
+            keys_tried.append(key_index)
+            
             try:
-                api_key = self.api_keys[self.current_key_index % len(self.api_keys)]
-                self.current_key_index += 1
-                
                 client = Mistral(api_key=api_key)
                 
-                logger.info(f"🔑 Tentative {attempt + 1}/{max_retries}")
+                logger.info(f"🔑 Utilisation clé #{key_index + 1} (tentative {attempt + 1})")
+                self.key_stats[key_index]['used'] += 1
+                self.stats['total_api_calls'] += 1
                 
+                # Tentative avec modèle principal
                 response = client.chat.complete(
                     model=Config.MISTRAL_MODEL_PRIMARY,
                     messages=[{"role": "user", "content": prompt}],
@@ -219,32 +166,49 @@ class MathiaExplorer:
                     max_tokens=Config.MISTRAL_MAX_TOKENS
                 )
                 
+                logger.info(f"✅ Succès avec clé #{key_index + 1}")
                 return response.choices[0].message.content.strip()
                 
             except Exception as e:
                 error_msg = str(e).lower()
+                last_exception = e
                 
-                if "429" in error_msg or "capacity" in error_msg:
-                    logger.warning(f"⚠️ Rate limit - Tentative fallback")
+                # Rate limit détecté
+                if "429" in error_msg or "rate" in error_msg or "quota" in error_msg:
+                    logger.warning(f"⚠️ Rate limit clé #{key_index + 1} - Passage à la suivante")
+                    self.key_stats[key_index]['rate_limits'] += 1
+                    
+                    # Essayer avec le modèle fallback sur une autre clé
+                    next_key_index = self.get_next_key_index()
                     try:
-                        response = client.chat.complete(
+                        logger.info(f"🔄 Fallback: clé #{next_key_index + 1} + modèle {Config.MISTRAL_MODEL_FALLBACK}")
+                        fallback_client = Mistral(api_key=self.api_keys[next_key_index])
+                        
+                        response = fallback_client.chat.complete(
                             model=Config.MISTRAL_MODEL_FALLBACK,
                             messages=[{"role": "user", "content": prompt}],
                             temperature=Config.MISTRAL_TEMPERATURE,
                             max_tokens=Config.MISTRAL_MAX_TOKENS
                         )
+                        
+                        logger.info(f"✅ Fallback réussi avec clé #{next_key_index + 1}")
                         return response.choices[0].message.content.strip()
                     except Exception as fallback_error:
                         logger.warning(f"❌ Fallback échoué: {fallback_error}")
+                        continue
+                else:
+                    # Autre erreur
+                    logger.error(f"❌ Erreur clé #{key_index + 1}: {e}")
+                    self.key_stats[key_index]['errors'] += 1
                 
-                last_exception = e
-                logger.warning(f"❌ Erreur tentative {attempt + 1}: {e}")
-                
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+                # Attendre avant le prochain essai
+                if attempt < len(self.api_keys) * Config.MAX_RETRIES_PER_KEY - 1:
+                    time.sleep(Config.RETRY_DELAY)
         
-        logger.error(f"Toutes les tentatives ont échoué: {last_exception}")
-        return None
+        # Toutes les tentatives ont échoué
+        logger.error(f"💥 ÉCHEC TOTAL après {len(keys_tried)} tentatives")
+        logger.error(f"Clés essayées: {[i+1 for i in keys_tried]}")
+        raise RuntimeError(f"Toutes les clés API ont échoué: {last_exception}")
     
     def get_cache_key(self, concept, language, detail_level):
         """Génère une clé de cache unique"""
@@ -258,12 +222,17 @@ class MathiaExplorer:
         
         try:
             import markdown
-            html = markdown.markdown(text, extensions=['extra', 'nl2br'])
+            html = markdown.markdown(text, extensions=['extra', 'nl2br', 'tables'])
             return html
-        except:
+        except ImportError:
+            logger.warning("⚠️ Module markdown non installé, fallback simple")
+            # Fallback simple
             text = text.strip()
             text = re.sub(r'\*\*([^*]+?)\*\*', r'<strong>\1</strong>', text)
             text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
+            text = re.sub(r'^### (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
+            text = re.sub(r'^## (.+)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
+            text = re.sub(r'^# (.+)$', r'<h1>\1</h1>', text, flags=re.MULTILINE)
             
             paragraphs = text.split('\n\n')
             formatted = []
@@ -306,14 +275,17 @@ class MathiaExplorer:
 **Instructions:**
 Fournis une explication complète en {word_count}, structurée ainsi:
 
-1. **DÉFINITION** (2-3 phrases)
-2. **EXPLICATION DÉTAILLÉE** (plusieurs paragraphes)
-3. **EXEMPLES CONCRETS** (3-5 exemples avec calculs)
-4. **CONCEPTS LIÉS** (4-6 concepts connexes)
-5. **IMPORTANCE** (applications réelles)
-6. **CONSEIL D'APPRENTISSAGE**
+1. **DÉFINITION** (2-3 phrases claires)
+2. **EXPLICATION DÉTAILLÉE** (plusieurs paragraphes pédagogiques)
+3. **EXEMPLES CONCRETS** (3-5 exemples avec calculs détaillés)
+4. **CONCEPTS LIÉS** (4-6 concepts connexes à explorer)
+5. **IMPORTANCE** (applications pratiques et réelles)
+6. **CONSEIL D'APPRENTISSAGE** (astuce pour mieux comprendre)
 
-Utilise le markdown pour la mise en forme. Réponds maintenant:"""
+Utilise le markdown pour la mise en forme (titres ##, gras **, italique *, listes).
+Sois clair, précis et pédagogique.
+
+Réponds maintenant:"""
         
         return prompt
     
@@ -337,7 +309,7 @@ Utilise le markdown pour la mise en forme. Réponds maintenant:"""
     
     def process_concept(self, concept, language='fr', detail_level='moyen'):
         """Traite un concept mathématique"""
-        logger.info(f"🔍 Requête: '{concept}' (langue={language}, détail={detail_level})")
+        logger.info(f"🔍 Nouvelle requête: '{concept}' (langue={language}, détail={detail_level})")
         self.stats['requests'] += 1
         start_time = time.time()
         
@@ -355,26 +327,26 @@ Utilise le markdown pour la mise en forme. Réponds maintenant:"""
         cached_result = self.cache.get(cache_key)
         
         if cached_result:
-            logger.info("💾 Cache HIT")
+            logger.info("💾 Cache HIT - Réponse instantanée")
             self.stats['cache_hits'] += 1
             cached_result['from_cache'] = True
+            cached_result['processing_time'] = round(time.time() - start_time, 2)
             return cached_result
         
-        logger.info("🔄 Cache MISS - Génération")
+        logger.info("🔄 Cache MISS - Appel API Mistral")
         
         try:
             # Construire le prompt
             prompt = self.build_prompt(concept, language, detail_level)
             
-            # Appeler Mistral
+            # Appeler Mistral avec rotation des clés
             ai_response = self.call_mistral_with_retry(prompt)
             
-            # Si pas de réponse (mode démo ou erreur), générer explication démo
             if not ai_response:
-                logger.info("📝 Mode DÉMO - Génération d'une explication exemple")
-                formatted_response = self.generate_demo_explanation(concept, language, detail_level)
-            else:
-                formatted_response = self.markdown_to_html(ai_response)
+                raise RuntimeError("Réponse vide de l'API Mistral")
+            
+            # Convertir en HTML
+            formatted_response = self.markdown_to_html(ai_response)
             
             # Temps de traitement
             processing_time = round(time.time() - start_time, 2)
@@ -392,27 +364,36 @@ Utilise le markdown pour la mise en forme. Réponds maintenant:"""
                 'processing_time': processing_time,
                 'detail_level': detail_level,
                 'language': language,
-                'source': 'demo' if DEMO_MODE else 'mistral_ai',
+                'source': 'mistral_ai',
+                'model': Config.MISTRAL_MODEL_PRIMARY,
                 'from_cache': False,
-                'cache_size': self.cache.size(),
-                'demo_mode': DEMO_MODE
+                'cache_size': self.cache.size()
             }
             
             # Mettre en cache
-            self.cache.set(cache_key, result)
+            self.cache.set(cache_key, result.copy())
             self.stats['concepts_explored'] += 1
             
-            logger.info(f"✅ Succès en {processing_time}s")
+            logger.info(f"✅ Traitement réussi en {processing_time}s")
             return result
             
         except Exception as e:
-            logger.error(f"❌ Erreur: {str(e)}")
+            logger.error(f"❌ Erreur traitement: {str(e)}")
             logger.error(traceback.format_exc())
             self.stats['errors'] += 1
             return {
                 'success': False,
                 'error': f'Erreur lors du traitement: {str(e)}'
             }
+    
+    def get_detailed_stats(self):
+        """Retourne les statistiques détaillées"""
+        stats = self.stats.copy()
+        stats['cache_size'] = self.cache.size()
+        stats['cache_max_size'] = Config.CACHE_MAX_SIZE
+        stats['api_keys_count'] = len(self.api_keys)
+        stats['key_stats'] = self.key_stats
+        return stats
 
 # Instance globale
 mathia = MathiaExplorer()
@@ -431,27 +412,20 @@ def explore():
     
     # CORS preflight
     if request.method == 'OPTIONS':
-        logger.info("✅ OPTIONS request - 204")
         return '', 204
     
     try:
-        # Log des headers
-        logger.debug(f"Headers: {dict(request.headers)}")
-        logger.debug(f"Content-Type: {request.content_type}")
-        
-        # Validation du Content-Type
+        # Validation Content-Type
         if not request.is_json:
             logger.error(f"❌ Content-Type invalide: {request.content_type}")
             return jsonify({
                 'success': False,
-                'error': f'Content-Type doit être application/json (reçu: {request.content_type})'
+                'error': f'Content-Type doit être application/json'
             }), 400
         
         data = request.get_json()
-        logger.debug(f"Données reçues: {data}")
         
         if not data:
-            logger.error("❌ Corps JSON vide")
             return jsonify({
                 'success': False,
                 'error': 'Corps de requête JSON requis'
@@ -482,7 +456,7 @@ def explore():
         
         if not result.get('success'):
             logger.error(f"❌ Échec: {result.get('error')}")
-            return jsonify(result), 400  # Changé de 500 à 400
+            return jsonify(result), 400
         
         logger.info(f"✅ Succès en {result.get('processing_time')}s")
         return jsonify(result), 200
@@ -492,18 +466,14 @@ def explore():
         logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
-            'error': f'Erreur interne: {str(e)}',
-            'details': traceback.format_exc() if app.debug else None
+            'error': f'Erreur interne: {str(e)}'
         }), 500
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Récupère les statistiques"""
+    """Récupère les statistiques détaillées"""
     try:
-        stats = mathia.stats.copy()
-        stats['cache_size'] = mathia.cache.size()
-        stats['cache_max_size'] = Config.CACHE_MAX_SIZE
-        stats['demo_mode'] = DEMO_MODE
+        stats = mathia.get_detailed_stats()
         return jsonify(stats), 200
     except Exception as e:
         logger.error(f"Erreur stats: {str(e)}")
@@ -515,13 +485,13 @@ def health():
     return jsonify({
         'status': 'OK',
         'service': 'Mathia Explorer',
-        'version': '4.2',
-        'demo_mode': DEMO_MODE,
-        'api_keys_configured': len(Config.API_KEYS) if not DEMO_MODE else 0,
-        'cache_size': mathia.cache.size()
+        'version': '5.0 PRODUCTION',
+        'api_keys_configured': len(Config.API_KEYS),
+        'cache_size': mathia.cache.size(),
+        'total_requests': mathia.stats['requests']
     }), 200
 
-# Template HTML
+# Template HTML (identique mais sans références au mode démo)
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -937,18 +907,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             margin-left: 10px;
         }
         
-        .demo-badge {
-            display: inline-block;
-            background: rgba(255, 193, 7, 0.2);
-            border: 1px solid rgba(255, 193, 7, 0.4);
-            color: #ffc107;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-left: 10px;
-        }
-        
         .loading {
             display: inline-block;
             width: 20px;
@@ -1150,18 +1108,17 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 cached: "en cache",
                 concepts: "concepts",
                 analyzing: "Analyse...",
-                generating: "Génération...",
+                generating: "Génération IA...",
                 completed: "Terminé !",
                 copied: "Copié !",
                 copy_error: "Échec de la copie",
                 processing_concept: "Exploration en cours...",
                 already_processing: "Une exploration est déjà en cours...",
                 invalid_concept: "Veuillez entrer un concept valide (minimum 2 caractères)",
-                explanation_generated: "Explication générée !",
+                explanation_generated: "Explication générée par Mistral AI !",
                 processing_error: "Erreur d'exploration",
                 from_cache: "Depuis le cache",
-                demo_mode: "Mode Démo",
-                rate_limit_error: "Trop de requêtes. Patientez quelques instants."
+                rate_limit_error: "Toutes les clés API sont saturées. Réessayez dans quelques instants."
             },
             en: {
                 title: "🔢 Mathia",
@@ -1184,18 +1141,17 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 cached: "cached",
                 concepts: "concepts",
                 analyzing: "Analyzing...",
-                generating: "Generating...",
+                generating: "AI generating...",
                 completed: "Completed!",
                 copied: "Copied!",
                 copy_error: "Copy failed",
                 processing_concept: "Exploration in progress...",
                 already_processing: "An exploration is already running...",
                 invalid_concept: "Please enter a valid concept (minimum 2 characters)",
-                explanation_generated: "Explanation generated!",
+                explanation_generated: "Explanation generated by Mistral AI!",
                 processing_error: "Exploration error",
                 from_cache: "From cache",
-                demo_mode: "Demo Mode",
-                rate_limit_error: "Too many requests. Please wait a moment."
+                rate_limit_error: "All API keys are saturated. Try again in a few moments."
             },
             es: {
                 title: "🔢 Mathia",
@@ -1218,18 +1174,17 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 cached: "en caché", 
                 concepts: "conceptos",
                 analyzing: "Analizando...",
-                generating: "Generando...",
+                generating: "Generando IA...",
                 completed: "¡Completado!",
                 copied: "¡Copiado!",
                 copy_error: "Error al copiar",
                 processing_concept: "Exploración en curso...",
                 already_processing: "Ya hay una exploración en ejecución...",
                 invalid_concept: "Por favor ingrese un concepto válido (mínimo 2 caracteres)",
-                explanation_generated: "¡Explicación generada!",
+                explanation_generated: "¡Explicación generada por Mistral AI!",
                 processing_error: "Error de exploración",
                 from_cache: "Desde caché",
-                demo_mode: "Modo Demo",
-                rate_limit_error: "Demasiadas solicitudes. Espere un momento."
+                rate_limit_error: "Todas las claves API están saturadas. Intente nuevamente en unos momentos."
             }
         };
 
@@ -1244,7 +1199,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         });
 
         function initializeApp() {
-            console.log('🚀 Application initialisée');
+            console.log('🚀 Mathia Explorer v5.0 - PRODUCTION');
             loadTheme();
             loadLanguage();
             initializeSuggestions();
@@ -1398,11 +1353,11 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 const response = await fetch('/api/stats');
                 if (response.ok) {
                     const stats = await response.json();
-                    console.log('📊 Stats:', stats);
+                    console.log('📊 Stats chargées:', stats);
                     updateStatsDisplay(stats);
                 }
             } catch (error) {
-                console.log('⚠️ Stats error:', error);
+                console.log('⚠️ Erreur chargement stats:', error);
             }
         }
 
@@ -1439,7 +1394,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     detail_level: detailLevel
                 };
                 
-                console.log('📤 Envoi requête:', requestData);
+                console.log('📤 Envoi requête à Mistral AI:', requestData);
                 
                 updateProgress(20);
                 updateStatus(translations[currentLanguage].analyzing);
@@ -1454,50 +1409,28 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 });
 
                 console.log('📥 Réponse status:', response.status);
-                console.log('📥 Réponse headers:', [...response.headers.entries()]);
 
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
-
-                const contentType = response.headers.get('content-type');
-                console.log('📋 Content-Type:', contentType);
 
                 if (!response.ok) {
                     let errorMessage = `HTTP ${response.status}`;
                     
                     try {
-                        if (contentType && contentType.includes('application/json')) {
-                            const errorData = await response.json();
-                            console.error('❌ Erreur JSON:', errorData);
-                            errorMessage = errorData.error || errorMessage;
-                        } else {
-                            const errorText = await response.text();
-                            console.error('❌ Erreur texte:', errorText.substring(0, 500));
-                            errorMessage = errorText.substring(0, 200);
-                        }
+                        const errorData = await response.json();
+                        console.error('❌ Erreur API:', errorData);
+                        errorMessage = errorData.error || errorMessage;
                     } catch (e) {
-                        console.error('❌ Erreur parsing:', e);
-                    }
-                    
-                    if (response.status === 429) {
-                        throw new Error(translations[currentLanguage].rate_limit_error);
-                    }
-                    
-                    if (response.status === 404) {
-                        throw new Error('Endpoint non trouvé (404). Vérifiez que le serveur est bien démarré.');
+                        const errorText = await response.text();
+                        console.error('❌ Erreur texte:', errorText);
+                        errorMessage = errorText.substring(0, 200);
                     }
                     
                     throw new Error(errorMessage);
                 }
 
-                let data;
-                try {
-                    data = await response.json();
-                    console.log('✅ Données reçues:', data);
-                } catch (e) {
-                    console.error('❌ Erreur parsing JSON:', e);
-                    throw new Error('Réponse invalide du serveur');
-                }
+                const data = await response.json();
+                console.log('✅ Données reçues de Mistral:', data);
 
                 if (!data.success) {
                     throw new Error(data.error || 'Erreur inconnue');
@@ -1515,7 +1448,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
             } catch (error) {
                 console.error('💥 Erreur complète:', error);
-                console.error('💥 Stack:', error.stack);
                 showNotification(error.message || translations[currentLanguage].processing_error, 'error');
                 hideStatus();
             } finally {
@@ -1565,14 +1497,10 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             
             if (elements.content) elements.content.innerHTML = data.explanation;
             
-            let metaText = `🤖 ${data.source === 'demo' ? 'Demo' : 'Mistral AI'} • ${data.processing_time}s • ${data.detail_level}`;
+            let metaText = `🤖 Mistral AI (${data.model || 'mistral-large'}) • ${data.processing_time}s • ${data.detail_level}`;
             
             if (data.from_cache) {
                 metaText += ` • <span class="cache-badge">💾 ${translations[currentLanguage].from_cache}</span>`;
-            }
-            
-            if (data.demo_mode) {
-                metaText += ` • <span class="demo-badge">⚠️ ${translations[currentLanguage].demo_mode}</span>`;
             }
             
             if (elements.meta) elements.meta.innerHTML = metaText;
@@ -1633,10 +1561,13 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         });
 
         // Test de connexion au démarrage
-        console.log('🔗 Test de connexion API...');
+        console.log('🔗 Test de connexion API Mistral...');
         fetch('/health')
             .then(r => r.json())
-            .then(data => console.log('✅ Health check:', data))
+            .then(data => {
+                console.log('✅ Health check:', data);
+                console.log(`✅ ${data.api_keys_configured} clé(s) API configurée(s)`);
+            })
             .catch(e => console.error('❌ Health check échoué:', e));
     </script>
 </body>
@@ -1644,48 +1575,36 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
 if __name__ == '__main__':
     print("=" * 70)
-    print("🔢 MATHIA V4.2 - Explorateur Mathématique IA (CORRIGÉ)")
+    print("🔢 MATHIA V5.0 - PRODUCTION")
     print("=" * 70)
     
     try:
         port = int(os.environ.get('PORT', 5000))
-        debug_mode = os.environ.get('FLASK_ENV') != 'production'
+        debug_mode = os.environ.get('FLASK_ENV') == 'development'
         
         print(f"\n⚙️  Configuration:")
         print(f"   • Port: {port}")
         print(f"   • Debug: {debug_mode}")
-        print(f"   • Mode: {'DÉMO' if DEMO_MODE else 'PRODUCTION'}")
-        if not DEMO_MODE:
-            print(f"   • Clés API: {len(Config.API_KEYS)}")
+        print(f"   • Mode: PRODUCTION")
+        print(f"   • Clés API: {len(Config.API_KEYS)}")
         print(f"   • Cache Max: {Config.CACHE_MAX_SIZE} entrées")
+        print(f"   • Modèle principal: {Config.MISTRAL_MODEL_PRIMARY}")
+        print(f"   • Modèle fallback: {Config.MISTRAL_MODEL_FALLBACK}")
         
-        print("\n✨ Corrections apportées:")
-        print("   ✅ Gestion d'erreurs renforcée")
-        print("   ✅ Logs de debugging détaillés (console navigateur + serveur)")
-        print("   ✅ Mode DÉMO si pas de clé API configurée")
-        print("   ✅ Messages d'erreur explicites")
-        print("   ✅ CORS corrigé")
-        print("   ✅ Validation robuste des requêtes")
-        print("   ✅ Health check au démarrage")
-        
-        if DEMO_MODE:
-            print("\n⚠️  MODE DÉMONSTRATION ACTIVÉ")
-            print("   L'application fonctionne sans API Mistral.")
-            print("   Pour activer Mistral AI:")
-            print("   1. Obtenez une clé sur: https://console.mistral.ai/")
-            print("   2. Exécutez: export MISTRAL_API_KEY='votre_clé'")
-            print("   3. Relancez l'application")
+        print("\n✨ Fonctionnalités:")
+        print("   ✅ Rotation automatique entre 3 clés API")
+        print("   ✅ Gestion intelligente des rate limits")
+        print("   ✅ Fallback automatique sur modèle alternatif")
+        print("   ✅ Cache LRU haute performance")
+        print("   ✅ Statistiques détaillées par clé")
+        print("   ✅ Support multilingue (FR/EN/ES)")
+        print("   ✅ Thème clair/sombre")
         
         print("\n📍 Routes:")
         print("   • GET  /            → Interface utilisateur")
-        print("   • POST /api/explore → Exploration de concepts")
-        print("   • GET  /api/stats   → Statistiques")
+        print("   • POST /api/explore → Exploration de concepts (Mistral AI)")
+        print("   • GET  /api/stats   → Statistiques détaillées")
         print("   • GET  /health      → Health check")
-        
-        print("\n🔍 Debugging:")
-        print("   • Ouvrez la console du navigateur (F12)")
-        print("   • Regardez les logs serveur ci-dessous")
-        print("   • Tous les détails y seront affichés")
         
         print("\n🚀 Démarrage du serveur...")
         print("=" * 70)
@@ -1693,6 +1612,14 @@ if __name__ == '__main__':
         
         app.run(host='0.0.0.0', port=port, debug=debug_mode)
         
+    except RuntimeError as e:
+        print(f"\n❌ ERREUR CONFIGURATION: {e}")
+        print("\n💡 Solution:")
+        print("   export MISTRAL_KEY_1='FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX'")
+        print("   export MISTRAL_KEY_2='9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF'")
+        print("   export MISTRAL_KEY_3='cvkQHVcomFFEW47G044x2p4DTyk5BIc7'")
+        print("   python mathia_app.py")
+        exit(1)
     except ImportError as e:
         print(f"\n❌ ERREUR: Dépendance manquante - {e}")
         print("   Installez: pip install flask mistralai markdown")
