@@ -10,9 +10,8 @@ from functools import wraps
 from datetime import datetime, timedelta
 from collections import defaultdict
 import markdown
-from threading import Lock
 
-# ==================== CONFIGURATION ====================
+# Configuration du logging structuré
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -21,24 +20,33 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# CORS Configuration globale
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
+# Configuration
 class Config:
-    """Configuration centralisée"""
-    # API Keys - À DÉPLACER dans variables d'environnement en production
-    API_KEYS = os.environ.get('MISTRAL_API_KEYS', 
-        'FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX,9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF,cvkQHVcomFFEW47G044x2p4DTyk5BIc7'
-    ).split(',')
+    # Clés API Mistral
+    API_KEYS = [
+        'FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX',
+        '9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF',
+        'cvkQHVcomFFEW47G044x2p4DTyk5BIc7'
+    ]
     
     # Sécurité
     MAX_CONCEPT_LENGTH = 200
     MIN_CONCEPT_LENGTH = 2
-    ALLOWED_ORIGINS = ['*']
+    ALLOWED_ORIGINS = '*'
     
     # Performance
     CACHE_MAX_SIZE = 100
-    CACHE_TTL = 3600  # 1 heure
     REQUEST_TIMEOUT = 30
     RATE_LIMIT_REQUESTS = 10
-    RATE_LIMIT_WINDOW = 60
+    RATE_LIMIT_WINDOW = 60  # secondes
     
     # Mistral
     MISTRAL_MODEL_PRIMARY = "mistral-large-latest"
@@ -46,134 +54,68 @@ class Config:
     MISTRAL_MAX_TOKENS = 1200
     MISTRAL_TEMPERATURE = 0.7
 
-logger.info(f"✅ Configuration chargée: {len(Config.API_KEYS)} clé(s) API")
+logger.info(f"✅ {len(Config.API_KEYS)} clé(s) API Mistral configurée(s)")
 
 
-# ==================== CORS MIDDLEWARE ====================
-@app.after_request
-def add_cors_headers(response):
-    """Ajoute les headers CORS à toutes les réponses"""
-    origin = request.headers.get('Origin', '*')
-    response.headers['Access-Control-Allow-Origin'] = origin
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
-    response.headers['Access-Control-Max-Age'] = '3600'
-    return response
-
-
-# ==================== RATE LIMITER ====================
+# Rate Limiting Simple
 class RateLimiter:
-    """Rate limiter thread-safe avec nettoyage automatique"""
-    
     def __init__(self):
         self.requests = defaultdict(list)
-        self.lock = Lock()
     
     def is_allowed(self, identifier):
-        """Vérifie si la requête est autorisée"""
-        with self.lock:
-            now = datetime.now()
-            # Nettoyer les anciennes requêtes
-            self.requests[identifier] = [
-                req_time for req_time in self.requests[identifier]
-                if now - req_time < timedelta(seconds=Config.RATE_LIMIT_WINDOW)
-            ]
-            
-            if len(self.requests[identifier]) >= Config.RATE_LIMIT_REQUESTS:
-                return False
-            
-            self.requests[identifier].append(now)
-            return True
-    
-    def cleanup(self):
-        """Nettoie les anciennes entrées"""
-        with self.lock:
-            now = datetime.now()
-            for identifier in list(self.requests.keys()):
-                self.requests[identifier] = [
-                    req_time for req_time in self.requests[identifier]
-                    if now - req_time < timedelta(seconds=Config.RATE_LIMIT_WINDOW)
-                ]
-                if not self.requests[identifier]:
-                    del self.requests[identifier]
+        now = datetime.now()
+        # Nettoyer les anciennes requêtes
+        self.requests[identifier] = [
+            req_time for req_time in self.requests[identifier]
+            if now - req_time < timedelta(seconds=Config.RATE_LIMIT_WINDOW)
+        ]
+        
+        if len(self.requests[identifier]) >= Config.RATE_LIMIT_REQUESTS:
+            return False
+        
+        self.requests[identifier].append(now)
+        return True
 
 rate_limiter = RateLimiter()
 
 
-# ==================== CACHE LRU ====================
+# Cache LRU simple
 class LRUCache:
-    """Cache LRU thread-safe avec expiration"""
-    
-    def __init__(self, max_size=100, ttl=3600):
+    def __init__(self, max_size=100):
         self.cache = {}
         self.access_order = []
-        self.timestamps = {}
         self.max_size = max_size
-        self.ttl = ttl
-        self.lock = Lock()
     
     def get(self, key):
-        """Récupère une valeur du cache"""
-        with self.lock:
-            if key not in self.cache:
-                return None
-            
-            # Vérifier l'expiration
-            if time.time() - self.timestamps.get(key, 0) > self.ttl:
-                self._remove(key)
-                return None
-            
+        if key in self.cache:
             # Mettre à jour l'ordre d'accès
             self.access_order.remove(key)
             self.access_order.append(key)
             return self.cache[key]
+        return None
     
     def set(self, key, value):
-        """Stocke une valeur dans le cache"""
-        with self.lock:
-            if key in self.cache:
-                self.access_order.remove(key)
-            elif len(self.cache) >= self.max_size:
-                # Supprimer le plus ancien
-                oldest = self.access_order.pop(0)
-                self._remove(oldest)
-            
-            self.cache[key] = value
-            self.access_order.append(key)
-            self.timestamps[key] = time.time()
-    
-    def _remove(self, key):
-        """Supprime une clé du cache"""
         if key in self.cache:
-            del self.cache[key]
-        if key in self.timestamps:
-            del self.timestamps[key]
+            self.access_order.remove(key)
+        elif len(self.cache) >= self.max_size:
+            # Supprimer le plus ancien
+            oldest = self.access_order.pop(0)
+            del self.cache[oldest]
+        
+        self.cache[key] = value
+        self.access_order.append(key)
     
     def size(self):
-        """Retourne la taille du cache"""
-        with self.lock:
-            return len(self.cache)
-    
-    def cleanup_expired(self):
-        """Nettoie les entrées expirées"""
-        with self.lock:
-            now = time.time()
-            expired = [k for k, ts in self.timestamps.items() if now - ts > self.ttl]
-            for key in expired:
-                self._remove(key)
-                if key in self.access_order:
-                    self.access_order.remove(key)
+        return len(self.cache)
 
 
-# ==================== MATHIA EXPLORER ====================
 class MathiaExplorer:
     """Explorateur mathématique avec IA Mistral - Version optimisée"""
     
     def __init__(self):
         self.api_keys = Config.API_KEYS
         self.current_key_index = 0
-        self.cache = LRUCache(max_size=Config.CACHE_MAX_SIZE, ttl=Config.CACHE_TTL)
+        self.cache = LRUCache(max_size=Config.CACHE_MAX_SIZE)
         self.stats = {
             'requests': 0,
             'cache_hits': 0,
@@ -182,18 +124,17 @@ class MathiaExplorer:
             'avg_processing_time': 0
         }
         self.processing_times = []
-        self.stats_lock = Lock()
         
         logger.info("✅ Mathia Explorer initialisé")
     
     def get_next_api_key(self):
-        """Obtient la prochaine clé API avec rotation"""
+        """Obtient la prochaine clé API avec rotation circulaire"""
         key = self.api_keys[self.current_key_index % len(self.api_keys)]
         self.current_key_index += 1
         return key
     
     def call_mistral_with_retry(self, prompt, max_retries=None):
-        """Appelle Mistral avec retry automatique"""
+        """Appelle Mistral avec retry sur toutes les clés disponibles"""
         if max_retries is None:
             max_retries = len(self.api_keys)
         
@@ -218,9 +159,9 @@ class MathiaExplorer:
             except Exception as e:
                 error_msg = str(e).lower()
                 
-                # Essayer le modèle fallback en cas de rate limit
+                # Si rate limit ou capacity, essayer le modèle fallback
                 if "429" in error_msg or "capacity" in error_msg:
-                    logger.warning(f"⚠️ Rate limit - Tentative avec modèle fallback")
+                    logger.warning(f"⚠️ Rate limit/Capacity - Tentative avec modèle fallback")
                     try:
                         response = client.chat.complete(
                             model=Config.MISTRAL_MODEL_FALLBACK,
@@ -236,29 +177,44 @@ class MathiaExplorer:
                 logger.warning(f"❌ Erreur tentative {attempt + 1}: {e}")
                 
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+                    time.sleep(2 ** attempt)  # Backoff exponentiel
         
         raise Exception(f"Toutes les tentatives ont échoué: {last_exception}")
     
     def get_cache_key(self, concept, language, detail_level):
-        """Génère une clé de cache unique"""
+        """Génère une clé de cache unique et normalisée"""
         normalized = f"{concept.lower().strip()}_{language}_{detail_level}"
         return hashlib.md5(normalized.encode()).hexdigest()
     
     def markdown_to_html(self, text):
-        """Convertit le Markdown en HTML"""
+        """Convertit le Markdown en HTML de manière robuste"""
         if not text:
             return ""
         
+        # Utiliser la bibliothèque markdown pour une conversion complète
         try:
-            html = markdown.markdown(text, extensions=['extra', 'nl2br'])
+            html = markdown.markdown(
+                text,
+                extensions=['extra', 'nl2br']
+            )
             return html
-        except Exception as e:
-            logger.warning(f"Erreur conversion Markdown: {e}")
-            # Fallback basique
+        except:
+            # Fallback vers la conversion basique
+            text = text.strip()
             text = re.sub(r'\*\*([^*]+?)\*\*', r'<strong>\1</strong>', text)
             text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
-            return f'<p>{text}</p>'
+            
+            paragraphs = text.split('\n\n')
+            formatted = []
+            
+            for para in paragraphs:
+                para = para.strip()
+                if para and not para.startswith('<'):
+                    para = f'<p>{para}</p>'
+                if para:
+                    formatted.append(para)
+            
+            return '\n'.join(formatted)
     
     def get_language_instruction(self, language):
         """Retourne l'instruction de langue"""
@@ -280,9 +236,9 @@ class MathiaExplorer:
         }
         word_count = word_counts.get(detail_level, word_counts['moyen'])
         
-        return f"""Tu es Mathia, un expert en mathématiques passionné par la vulgarisation.
+        prompt = f"""Tu es Mathia, un expert en mathématiques passionné par la vulgarisation. Ta mission est d'expliquer des concepts mathématiques de manière claire, structurée et accessible.
 
-**Concept:** "{concept}"
+**Concept à explorer:** "{concept}"
 
 {lang_instruction}
 
@@ -290,15 +246,41 @@ class MathiaExplorer:
 Fournis une explication complète en {word_count}, structurée ainsi:
 
 1. **DÉFINITION** (2-3 phrases claires)
-2. **EXPLICATION DÉTAILLÉE** (plusieurs paragraphes)
-3. **EXEMPLES CONCRETS** (3-5 exemples avec calculs)
-4. **CONCEPTS LIÉS** (4-6 concepts connexes)
-5. **IMPORTANCE** (applications réelles)
-6. **CONSEIL D'APPRENTISSAGE**
+   - Explique ce qu'est le concept en termes simples
+   - Donne le contexte mathématique
 
-**Format:** Paragraphes fluides, langage accessible mais précis, utilise markdown (gras, italique).
+2. **EXPLICATION DÉTAILLÉE** (plusieurs paragraphes)
+   - Développe le concept en profondeur
+   - Explique les propriétés importantes
+   - Montre le fonctionnement
+
+3. **EXEMPLES CONCRETS** (3-5 exemples)
+   - Exemples mathématiques précis avec calculs
+   - Cas simples puis plus complexes
+   - Applications pratiques
+
+4. **CONCEPTS LIÉS** (4-6 concepts)
+   - Liste des concepts connexes
+   - Lien avec le concept principal
+
+5. **IMPORTANCE**
+   - Applications réelles
+   - Pourquoi c'est fondamental en mathématiques
+
+6. **CONSEIL D'APPRENTISSAGE**
+   - Un conseil pratique pour la compréhension
+
+**Format:**
+- Écris en paragraphes naturels et fluides
+- Utilise un langage accessible mais précis
+- Sois pédagogique et encourageant
+- Structure avec des transitions
+- Utilise le markdown pour la mise en forme (gras, italique)
+- Évite les listes à puces, privilégie la prose
 
 Réponds maintenant:"""
+        
+        return prompt
     
     def validate_concept(self, concept):
         """Valide le concept d'entrée"""
@@ -308,63 +290,45 @@ Réponds maintenant:"""
         concept = concept.strip()
         
         if len(concept) < Config.MIN_CONCEPT_LENGTH:
-            return False, f"Minimum {Config.MIN_CONCEPT_LENGTH} caractères"
+            return False, f"Le concept doit contenir au moins {Config.MIN_CONCEPT_LENGTH} caractères"
         
         if len(concept) > Config.MAX_CONCEPT_LENGTH:
-            return False, f"Maximum {Config.MAX_CONCEPT_LENGTH} caractères"
+            return False, f"Le concept ne doit pas dépasser {Config.MAX_CONCEPT_LENGTH} caractères"
         
+        # Vérifier les caractères suspects
         if re.search(r'[<>{}]', concept):
-            return False, "Caractères non autorisés"
+            return False, "Le concept contient des caractères non autorisés"
         
         return True, concept
     
-    def update_stats(self, processing_time=None, cache_hit=False, error=False):
-        """Met à jour les statistiques de manière thread-safe"""
-        with self.stats_lock:
-            self.stats['requests'] += 1
-            
-            if cache_hit:
-                self.stats['cache_hits'] += 1
-            
-            if error:
-                self.stats['errors'] += 1
-            elif not cache_hit:
-                self.stats['concepts_explored'] += 1
-            
-            if processing_time:
-                self.processing_times.append(processing_time)
-                if self.processing_times:
-                    self.stats['avg_processing_time'] = round(
-                        sum(self.processing_times) / len(self.processing_times), 2
-                    )
-    
     def process_concept(self, concept, language='fr', detail_level='moyen'):
-        """Traite un concept mathématique"""
-        logger.info(f"🔍 Requête: '{concept}' (lang={language}, détail={detail_level})")
+        """Traite un concept mathématique complet"""
+        logger.info(f"🔍 Nouvelle requête: '{concept}' (langue={language}, détail={detail_level})")
+        self.stats['requests'] += 1
         start_time = time.time()
         
         # Validation
         is_valid, result = self.validate_concept(concept)
         if not is_valid:
-            self.update_stats(error=True)
+            self.stats['errors'] += 1
             return {'success': False, 'error': result}
         
         concept = result
         
-        # Cache
+        # Vérifier le cache
         cache_key = self.get_cache_key(concept, language, detail_level)
         cached_result = self.cache.get(cache_key)
         
         if cached_result:
             logger.info("💾 Cache HIT")
-            self.update_stats(cache_hit=True)
+            self.stats['cache_hits'] += 1
             cached_result['from_cache'] = True
             return cached_result
         
-        logger.info("🔄 Cache MISS - Génération IA")
+        logger.info("🔄 Cache MISS - Génération avec Mistral")
         
         try:
-            # Générer avec Mistral
+            # Construire et exécuter le prompt
             prompt = self.build_prompt(concept, language, detail_level)
             ai_response = self.call_mistral_with_retry(prompt)
             
@@ -374,9 +338,15 @@ Réponds maintenant:"""
             # Convertir en HTML
             formatted_response = self.markdown_to_html(ai_response)
             
-            # Calculer le temps
+            # Calculer le temps de traitement
             processing_time = round(time.time() - start_time, 2)
-            self.update_stats(processing_time=processing_time)
+            self.processing_times.append(processing_time)
+            
+            # Mettre à jour les statistiques
+            if self.processing_times:
+                self.stats['avg_processing_time'] = round(
+                    sum(self.processing_times) / len(self.processing_times), 2
+                )
             
             result = {
                 'success': True,
@@ -392,78 +362,68 @@ Réponds maintenant:"""
             
             # Mettre en cache
             self.cache.set(cache_key, result)
+            self.stats['concepts_explored'] += 1
             
             logger.info(f"✅ Succès en {processing_time}s")
             return result
             
         except Exception as e:
             logger.error(f"❌ Erreur: {str(e)}", exc_info=True)
-            self.update_stats(error=True)
+            self.stats['errors'] += 1
             return {
                 'success': False,
-                'error': f'Erreur de traitement: {str(e)}'
+                'error': f'Erreur lors du traitement: {str(e)}'
             }
+
 
 # Instance globale
 mathia = MathiaExplorer()
 
 
-# ==================== ROUTES ====================
+# Routes
 @app.route('/')
 def index():
-    """Page principale"""
+    """Interface principale"""
     return render_template_string(MATHIA_TEMPLATE)
 
 
 @app.route('/api/explore', methods=['POST', 'OPTIONS'])
 def explore():
-    """API d'exploration de concepts - ROUTE CORRIGÉE"""
+    """API d'exploration de concepts"""
     
-    # Log détaillé pour déboguer
-    logger.info(f"📨 {request.method} /api/explore depuis {request.remote_addr}")
-    logger.info(f"   Headers: {dict(request.headers)}")
+    logger.info(f"📨 Requête reçue: {request.method} depuis {request.remote_addr}")
     
-    # Gérer OPTIONS (CORS preflight)
+    # CORS preflight
     if request.method == 'OPTIONS':
-        logger.info("✅ OPTIONS - CORS preflight")
-        response = jsonify({'status': 'ok'})
-        return response, 200
+        logger.info("✅ OPTIONS request - returning 204")
+        return '', 204
     
     try:
-        # Vérifier Content-Type
-        content_type = request.headers.get('Content-Type', '')
-        logger.info(f"   Content-Type: {content_type}")
-        
-        if 'application/json' not in content_type:
-            logger.error(f"❌ Content-Type invalide: {content_type}")
+        # Validation du Content-Type
+        if not request.is_json:
+            logger.error(f"❌ Content-Type invalide: {request.content_type}")
             return jsonify({
                 'success': False,
                 'error': 'Content-Type doit être application/json'
             }), 400
         
-        # Parser le JSON
-        try:
-            data = request.get_json(force=True)
-            logger.info(f"   Body: {data}")
-        except Exception as e:
-            logger.error(f"❌ Erreur parsing JSON: {e}")
-            return jsonify({
-                'success': False,
-                'error': f'JSON invalide: {str(e)}'
-            }), 400
+        data = request.get_json()
         
         if not data:
+            logger.error("❌ Corps JSON vide")
             return jsonify({
                 'success': False,
-                'error': 'Corps JSON requis'
+                'error': 'Corps de requête JSON requis'
             }), 400
         
-        # Extraire les paramètres
+        # Extraction et validation des paramètres
         concept = data.get('concept', '').strip()
         language = data.get('language', 'fr')
         detail_level = data.get('detail_level', 'moyen')
         
-        # Valider
+        logger.info(f"📝 Paramètres: concept='{concept}', langue={language}, détail={detail_level}")
+        
+        # Validation
         if language not in ['fr', 'en', 'es']:
             language = 'fr'
         
@@ -473,28 +433,21 @@ def explore():
         if not concept:
             return jsonify({
                 'success': False,
-                'error': 'Paramètre "concept" requis'
+                'error': 'Le paramètre "concept" est requis'
             }), 400
         
-        # Rate limiting
-        client_id = request.remote_addr
-        if not rate_limiter.is_allowed(client_id):
-            return jsonify({
-                'success': False,
-                'error': 'Trop de requêtes. Réessayez dans 1 minute.'
-            }), 429
-        
-        # Traiter
+        # Traitement
         result = mathia.process_concept(concept, language, detail_level)
         
         if not result.get('success'):
+            logger.error(f"❌ Échec: {result.get('error')}")
             return jsonify(result), 500
         
-        logger.info(f"✅ Succès: {result.get('processing_time')}s")
+        logger.info(f"✅ Succès en {result.get('processing_time')}s")
         return jsonify(result), 200
         
     except Exception as e:
-        logger.error(f"💥 Erreur serveur: {str(e)}", exc_info=True)
+        logger.error(f"💥 Erreur: {str(e)}", exc_info=True)
         return jsonify({
             'success': False,
             'error': f'Erreur interne: {str(e)}'
@@ -503,7 +456,7 @@ def explore():
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Statistiques"""
+    """Récupère les statistiques"""
     try:
         stats = mathia.stats.copy()
         stats['cache_size'] = mathia.cache.size()
@@ -516,17 +469,17 @@ def get_stats():
 
 @app.route('/health')
 def health():
-    """Health check"""
+    """Health check endpoint"""
     return jsonify({
-        'status': 'healthy',
+        'status': 'OK',
         'service': 'Mathia Explorer',
-        'version': '5.0',
-        'api_keys': len(Config.API_KEYS),
+        'version': '4.1',
+        'api_keys_configured': len(Config.API_KEYS),
         'cache_size': mathia.cache.size()
     }), 200
 
 
-# ==================== TEMPLATE HTML ====================
+# Template HTML CORRIGÉ avec styles fixes
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -541,6 +494,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             --gradient-end: #f77f00;
         }
         
+        /* THÈME LIGHT (par défaut) */
         body {
             --bg-primary: linear-gradient(135deg, #e63946 0%, #f77f00 100%);
             --bg-secondary: rgba(255, 255, 255, 0.25);
@@ -563,6 +517,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             --placeholder-color: rgba(255, 255, 255, 0.8);
         }
         
+        /* THÈME DARK */
         body[data-theme="dark"] {
             --bg-primary: #0d1b2a;
             --bg-secondary: #1b263b;
@@ -595,6 +550,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             transition: all 0.3s ease;
         }
         
+        /* Header fixe */
         .top-header {
             position: fixed;
             top: 0;
@@ -623,7 +579,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             align-items: center;
         }
         
-        .language-selector, .theme-toggle {
+        .language-selector,
+        .theme-toggle {
             background: var(--button-bg);
             border: 1px solid var(--border-color);
             border-radius: 15px;
@@ -640,6 +597,13 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             font-size: 1.2rem;
         }
         
+        .language-selector:hover,
+        .theme-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px var(--shadow-strong);
+        }
+        
+        /* Container principal */
         .container {
             flex: 1;
             padding: 100px 30px 30px;
@@ -651,6 +615,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             gap: 30px;
         }
         
+        /* Section titre */
         .title-section {
             text-align: center;
             margin-bottom: 20px;
@@ -669,6 +634,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             font-size: 1.15rem;
         }
         
+        /* Stats */
         .stats {
             display: flex;
             justify-content: center;
@@ -688,6 +654,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             box-shadow: 0 4px 15px var(--shadow);
         }
         
+        /* Section formulaire */
         .form-section {
             background: var(--bg-secondary);
             backdrop-filter: blur(20px);
@@ -732,6 +699,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             color: var(--placeholder-color);
         }
         
+        /* Sélecteur de détail */
         .detail-selector {
             display: flex;
             gap: 15px;
@@ -764,6 +732,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             font-weight: 600;
         }
         
+        /* Suggestions */
         .suggestions {
             margin-top: 15px;
         }
@@ -793,6 +762,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             background: var(--button-active);
         }
         
+        /* Boutons */
         .controls {
             display: flex;
             justify-content: center;
@@ -831,6 +801,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             transform: none;
         }
         
+        /* Status */
         .status {
             background: var(--bg-secondary);
             backdrop-filter: blur(20px);
@@ -870,6 +841,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
         }
         
+        /* Résultat */
         .result {
             background: var(--bg-secondary);
             backdrop-filter: blur(20px);
@@ -951,6 +923,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             margin-left: 10px;
         }
         
+        /* Loading spinner */
         .loading {
             display: inline-block;
             width: 20px;
@@ -962,6 +935,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             animation: spin 1s ease-in-out infinite;
         }
         
+        /* Notifications */
         .notification {
             position: fixed;
             top: 90px;
@@ -993,6 +967,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             background: rgba(247, 127, 0, 0.95);
         }
         
+        /* Animations */
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
@@ -1019,6 +994,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             }
         }
         
+        /* Responsive */
         @media (max-width: 768px) {
             .top-header {
                 padding: 15px 20px;
@@ -1204,8 +1180,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 explanation_generated: "Explication générée !",
                 processing_error: "Erreur d'exploration",
                 from_cache: "Depuis le cache",
-                rate_limit_error: "Trop de requêtes. Patientez quelques instants.",
-                network_error: "Erreur réseau. Vérifiez votre connexion."
+                rate_limit_error: "Trop de requêtes. Patientez quelques instants."
             },
             en: {
                 title: "🔢 Mathia",
@@ -1238,8 +1213,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 explanation_generated: "Explanation generated!",
                 processing_error: "Exploration error",
                 from_cache: "From cache",
-                rate_limit_error: "Too many requests. Please wait a moment.",
-                network_error: "Network error. Check your connection."
+                rate_limit_error: "Too many requests. Please wait a moment."
             },
             es: {
                 title: "🔢 Mathia",
@@ -1272,8 +1246,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 explanation_generated: "¡Explicación generada!",
                 processing_error: "Error de exploración",
                 from_cache: "Desde caché",
-                rate_limit_error: "Demasiadas solicitudes. Espere un momento.",
-                network_error: "Error de red. Verifique su conexión."
+                rate_limit_error: "Demasiadas solicitudes. Espere un momento."
             }
         };
 
@@ -1477,63 +1450,53 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     detail_level: detailLevel
                 };
                 
-                console.log('🚀 Envoi requête:', requestData);
+                console.log('🚀 Requête:', requestData);
                 
                 updateProgress(20);
                 updateStatus(translations[currentLanguage].analyzing);
                 
-                // CORRECTION: Headers explicites et gestion d'erreur améliorée
                 const response = await fetch('/api/explore', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
-                    body: JSON.stringify(requestData),
-                    credentials: 'same-origin'
+                    body: JSON.stringify(requestData)
                 });
 
-                console.log('📡 Réponse HTTP:', response.status, response.statusText);
+                console.log('📡 Réponse:', response.status);
 
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
 
-                // Gestion détaillée des erreurs HTTP
                 if (!response.ok) {
-                    let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-                    
+                    let errorMessage = `HTTP ${response.status}`;
                     try {
                         const contentType = response.headers.get('content-type');
                         
                         if (contentType && contentType.includes('application/json')) {
                             const errorData = await response.json();
                             errorMessage = errorData.error || errorMessage;
-                            console.error('❌ Erreur JSON:', errorData);
                         } else {
                             const errorText = await response.text();
-                            console.error('❌ Erreur texte:', errorText.substring(0, 200));
-                            errorMessage = errorText.substring(0, 200) || errorMessage;
+                            errorMessage = errorText.substring(0, 200);
                         }
-                    } catch (parseError) {
-                        console.error('❌ Erreur parsing réponse:', parseError);
+                    } catch (e) {
+                        console.error('Erreur parsing:', e);
                     }
                     
                     if (response.status === 429) {
                         throw new Error(translations[currentLanguage].rate_limit_error);
-                    } else if (response.status === 404) {
-                        throw new Error('Endpoint introuvable (404). Vérifiez l\'URL de l\'API.');
-                    } else if (response.status >= 500) {
-                        throw new Error('Erreur serveur (' + response.status + '). Réessayez plus tard.');
                     }
                     
                     throw new Error(errorMessage);
                 }
 
                 const data = await response.json();
-                console.log('✅ Données reçues:', data);
+                console.log('✅ Succès');
 
                 if (!data.success) {
-                    throw new Error(data.error || 'Erreur inconnue');
+                    throw new Error(data.error || 'Unknown error');
                 }
 
                 updateProgress(100);
@@ -1547,16 +1510,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 showNotification(translations[currentLanguage].explanation_generated, 'success');
 
             } catch (error) {
-                console.error('💥 Erreur complète:', error);
-                
-                let errorMsg = error.message || translations[currentLanguage].processing_error;
-                
-                // Détection d'erreurs réseau
-                if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                    errorMsg = translations[currentLanguage].network_error;
-                }
-                
-                showNotification(errorMsg, 'error');
+                console.error('💥 Erreur:', error);
+                showNotification(error.message || translations[currentLanguage].processing_error, 'error');
                 hideStatus();
             } finally {
                 isProcessing = false;
@@ -1639,7 +1594,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
 
         function showNotification(message, type = 'info') {
-            // Supprimer les notifications existantes
             document.querySelectorAll('.notification').forEach(n => n.remove());
             
             const notification = document.createElement('div');
@@ -1658,7 +1612,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        // Gestion de la touche Entrée
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
                 const target = e.target;
@@ -1674,7 +1627,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
 if __name__ == '__main__':
     print("=" * 70)
-    print("🔢 MATHIA V5.0 - Explorateur Mathématique IA (VERSION CORRIGÉE)")
+    print("🔢 MATHIA V4.1 - Explorateur Mathématique avec IA (CORRIGÉ)")
     print("=" * 70)
     
     try:
@@ -1685,78 +1638,31 @@ if __name__ == '__main__':
         print(f"   • Port: {port}")
         print(f"   • Debug: {debug_mode}")
         print(f"   • Clés API: {len(Config.API_KEYS)}")
-        print(f"   • Cache: {Config.CACHE_MAX_SIZE} entrées (TTL: {Config.CACHE_TTL}s)")
-        print(f"   • Rate Limit: {Config.RATE_LIMIT_REQUESTS} req/{Config.RATE_LIMIT_WINDOW}s")
+        print(f"   • Cache Max: {Config.CACHE_MAX_SIZE} entrées")
         
-        print("\n✨ Corrections principales:")
-        print("   ✅ Erreur 404 corrigée - Route /api/explore optimisée")
-        print("   ✅ CORS headers améliorés (OPTIONS + credentials)")
-        print("   ✅ Gestion d'erreurs HTTP détaillée (404, 429, 500)")
-        print("   ✅ Rate limiter thread-safe avec Lock")
-        print("   ✅ Cache LRU avec expiration (TTL)")
-        print("   ✅ Logs structurés pour déboguer")
-        print("   ✅ Validation stricte des entrées")
-        print("   ✅ Headers explicites dans fetch()")
-        print("   ✅ Messages d'erreur multilingues")
-        print("   ✅ Statistiques thread-safe")
+        print("\n✨ Corrections apportées:")
+        print("   ✅ Système de thème CSS corrigé (variables CSS)")
+        print("   ✅ Contraste texte/fond optimisé pour les deux thèmes")
+        print("   ✅ Thème light par défaut sans data-attribute")
+        print("   ✅ Thème dark avec data-theme='dark'")
+        print("   ✅ Tous les éléments visibles et lisibles")
+        print("   ✅ Transitions fluides entre thèmes")
         
-        print("\n🔧 Améliorations techniques:")
-        print("   • Threading.Lock pour thread-safety")
-        print("   • Cache avec nettoyage automatique")
-        print("   • Retry avec backoff exponentiel")
-        print("   • Fallback sur modèle secondaire")
-        print("   • Content-Type validation stricte")
-        
-        print("\n📍 Endpoints disponibles:")
-        print("   • GET  /            → Interface web")
-        print("   • POST /api/explore → Exploration (JSON)")
+        print("\n📍 Routes:")
+        print("   • GET  /            → Interface utilisateur")
+        print("   • POST /api/explore → Exploration de concepts")
         print("   • GET  /api/stats   → Statistiques")
         print("   • GET  /health      → Health check")
         
-        print("\n🔍 Debug de l'erreur 404:")
-        print("   1. Vérifiez que le serveur démarre sur le bon port")
-        print("   2. La route POST /api/explore est bien définie")
-        print("   3. Les headers CORS sont configurés")
-        print("   4. Le Content-Type est 'application/json'")
-        print("   5. Consultez les logs ci-dessous pour plus de détails")
-        
         print("\n🚀 Démarrage du serveur...")
         print("=" * 70)
-        print()
         
-        # Tâche de nettoyage périodique (optionnel)
-        def cleanup_task():
-            import threading
-            def cleanup():
-                while True:
-                    time.sleep(300)  # 5 minutes
-                    try:
-                        mathia.cache.cleanup_expired()
-                        rate_limiter.cleanup()
-                        logger.info("🧹 Nettoyage effectué")
-                    except Exception as e:
-                        logger.error(f"Erreur nettoyage: {e}")
-            
-            thread = threading.Thread(target=cleanup, daemon=True)
-            thread.start()
-        
-        cleanup_task()
-        
-        app.run(host='0.0.0.0', port=port, debug=debug_mode, threaded=True)
+        app.run(host='0.0.0.0', port=port, debug=debug_mode)
         
     except ImportError as e:
         print(f"\n❌ ERREUR: Dépendance manquante - {e}")
-        print("\n📦 Installation requise:")
-        print("   pip install flask mistralai markdown")
-        print("\n   Ou avec requirements.txt:")
-        print("   pip install -r requirements.txt")
+        print("   Installez: pip install flask mistralai markdown")
         exit(1)
-    except KeyboardInterrupt:
-        print("\n\n⏹️  Arrêt du serveur...")
-        print("👋 Au revoir!")
-        exit(0)
     except Exception as e:
         print(f"\n❌ ERREUR FATALE: {e}")
-        import traceback
-        traceback.print_exc()
         exit(1)
