@@ -1,52 +1,43 @@
 from flask import Flask, request, jsonify, render_template_string
 import os
 import json
-from mistralai import Mistral
 import logging
 import time
 import hashlib
 import re
-from functools import wraps
 from datetime import datetime, timedelta
 from collections import defaultdict
-import markdown
+import traceback
 
-# Configuration du logging structuré
+# Configuration du logging DÉTAILLÉ
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# CORS Configuration globale
+# CORS Configuration RENFORCÉE
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Max-Age'] = '3600'
     return response
 
 # Configuration
 class Config:
-    # Clés API Mistral
-    API_KEYS = [
-        'FabLUUhEyzeKgHWxMQp2QWjcojqtfbMX',
-        '9Qgem2NC1g1sJ1gU5a7fCRJWasW3ytqF',
-        'cvkQHVcomFFEW47G044x2p4DTyk5BIc7'
-    ]
+    # 🔑 CLÉS API - À CONFIGURER !
+    API_KEYS = os.environ.get('MISTRAL_API_KEY', '').split(',') if os.environ.get('MISTRAL_API_KEY') else []
     
     # Sécurité
     MAX_CONCEPT_LENGTH = 200
     MIN_CONCEPT_LENGTH = 2
-    ALLOWED_ORIGINS = '*'
     
     # Performance
     CACHE_MAX_SIZE = 100
-    REQUEST_TIMEOUT = 30
-    RATE_LIMIT_REQUESTS = 10
-    RATE_LIMIT_WINDOW = 60  # secondes
     
     # Mistral
     MISTRAL_MODEL_PRIMARY = "mistral-large-latest"
@@ -54,30 +45,15 @@ class Config:
     MISTRAL_MAX_TOKENS = 1200
     MISTRAL_TEMPERATURE = 0.7
 
-logger.info(f"✅ {len(Config.API_KEYS)} clé(s) API Mistral configurée(s)")
-
-
-# Rate Limiting Simple
-class RateLimiter:
-    def __init__(self):
-        self.requests = defaultdict(list)
-    
-    def is_allowed(self, identifier):
-        now = datetime.now()
-        # Nettoyer les anciennes requêtes
-        self.requests[identifier] = [
-            req_time for req_time in self.requests[identifier]
-            if now - req_time < timedelta(seconds=Config.RATE_LIMIT_WINDOW)
-        ]
-        
-        if len(self.requests[identifier]) >= Config.RATE_LIMIT_REQUESTS:
-            return False
-        
-        self.requests[identifier].append(now)
-        return True
-
-rate_limiter = RateLimiter()
-
+# Vérification des clés API
+if not Config.API_KEYS or Config.API_KEYS == ['']:
+    logger.warning("⚠️ AUCUNE CLÉ API MISTRAL CONFIGURÉE !")
+    logger.warning("⚠️ Mode DÉMO activé - Les explications seront simulées")
+    logger.warning("⚠️ Pour utiliser Mistral AI, définissez: export MISTRAL_API_KEY='votre_clé'")
+    DEMO_MODE = True
+else:
+    logger.info(f"✅ {len(Config.API_KEYS)} clé(s) API Mistral configurée(s)")
+    DEMO_MODE = False
 
 # Cache LRU simple
 class LRUCache:
@@ -88,7 +64,6 @@ class LRUCache:
     
     def get(self, key):
         if key in self.cache:
-            # Mettre à jour l'ordre d'accès
             self.access_order.remove(key)
             self.access_order.append(key)
             return self.cache[key]
@@ -98,7 +73,6 @@ class LRUCache:
         if key in self.cache:
             self.access_order.remove(key)
         elif len(self.cache) >= self.max_size:
-            # Supprimer le plus ancien
             oldest = self.access_order.pop(0)
             del self.cache[oldest]
         
@@ -108,9 +82,8 @@ class LRUCache:
     def size(self):
         return len(self.cache)
 
-
 class MathiaExplorer:
-    """Explorateur mathématique avec IA Mistral - Version optimisée"""
+    """Explorateur mathématique avec IA Mistral"""
     
     def __init__(self):
         self.api_keys = Config.API_KEYS
@@ -127,14 +100,104 @@ class MathiaExplorer:
         
         logger.info("✅ Mathia Explorer initialisé")
     
-    def get_next_api_key(self):
-        """Obtient la prochaine clé API avec rotation circulaire"""
-        key = self.api_keys[self.current_key_index % len(self.api_keys)]
-        self.current_key_index += 1
-        return key
+    def generate_demo_explanation(self, concept, language, detail_level):
+        """Génère une explication démo quand les clés API ne sont pas configurées"""
+        
+        translations = {
+            'fr': {
+                'title': 'Explication Démo',
+                'intro': f"Ceci est une explication de démonstration pour le concept : **{concept}**",
+                'warning': "⚠️ Mode Démonstration",
+                'warning_text': "Pour obtenir des explications réelles générées par l'IA Mistral, configurez votre clé API.",
+                'definition': "Définition",
+                'definition_text': f"Le concept de '{concept}' est un élément fondamental en mathématiques.",
+                'explanation': "Explication",
+                'explanation_text': "En mode démo, cette section contiendrait une explication détaillée générée par Mistral AI.",
+                'examples': "Exemples",
+                'examples_text': "Des exemples concrets seraient fournis ici avec l'IA configurée.",
+                'howto': "Comment configurer l'API",
+                'step1': "1. Créez un compte sur console.mistral.ai",
+                'step2': "2. Générez une clé API",
+                'step3': "3. Définissez la variable d'environnement: export MISTRAL_API_KEY='votre_clé'",
+                'step4': "4. Redémarrez l'application"
+            },
+            'en': {
+                'title': 'Demo Explanation',
+                'intro': f"This is a demo explanation for the concept: **{concept}**",
+                'warning': "⚠️ Demo Mode",
+                'warning_text': "To get real AI-generated explanations from Mistral, configure your API key.",
+                'definition': "Definition",
+                'definition_text': f"The concept of '{concept}' is a fundamental element in mathematics.",
+                'explanation': "Explanation",
+                'explanation_text': "In demo mode, this section would contain a detailed explanation generated by Mistral AI.",
+                'examples': "Examples",
+                'examples_text': "Concrete examples would be provided here with configured AI.",
+                'howto': "How to configure the API",
+                'step1': "1. Create an account on console.mistral.ai",
+                'step2': "2. Generate an API key",
+                'step3': "3. Set environment variable: export MISTRAL_API_KEY='your_key'",
+                'step4': "4. Restart the application"
+            },
+            'es': {
+                'title': 'Explicación Demo',
+                'intro': f"Esta es una explicación de demostración del concepto: **{concept}**",
+                'warning': "⚠️ Modo Demostración",
+                'warning_text': "Para obtener explicaciones reales generadas por IA de Mistral, configure su clave API.",
+                'definition': "Definición",
+                'definition_text': f"El concepto de '{concept}' es un elemento fundamental en matemáticas.",
+                'explanation': "Explicación",
+                'explanation_text': "En modo demo, esta sección contendría una explicación detallada generada por Mistral AI.",
+                'examples': "Ejemplos",
+                'examples_text': "Se proporcionarían ejemplos concretos aquí con la IA configurada.",
+                'howto': "Cómo configurar la API",
+                'step1': "1. Cree una cuenta en console.mistral.ai",
+                'step2': "2. Genere una clave API",
+                'step3': "3. Defina la variable de entorno: export MISTRAL_API_KEY='su_clave'",
+                'step4': "4. Reinicie la aplicación"
+            }
+        }
+        
+        t = translations.get(language, translations['fr'])
+        
+        return f"""
+<div style="background: rgba(255, 193, 7, 0.1); border: 2px solid rgba(255, 193, 7, 0.5); border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+    <h3>⚠️ {t['warning']}</h3>
+    <p>{t['warning_text']}</p>
+</div>
+
+<h2>{t['title']}</h2>
+<p>{t['intro']}</p>
+
+<h3>📖 {t['definition']}</h3>
+<p>{t['definition_text']}</p>
+
+<h3>💡 {t['explanation']}</h3>
+<p>{t['explanation_text']}</p>
+
+<h3>📝 {t['examples']}</h3>
+<p>{t['examples_text']}</p>
+
+<div style="background: rgba(33, 150, 243, 0.1); border: 2px solid rgba(33, 150, 243, 0.5); border-radius: 10px; padding: 20px; margin-top: 30px;">
+    <h3>🔧 {t['howto']}</h3>
+    <p><strong>{t['step1']}</strong></p>
+    <p><strong>{t['step2']}</strong></p>
+    <p><strong>{t['step3']}</strong></p>
+    <p><strong>{t['step4']}</strong></p>
+</div>
+"""
     
     def call_mistral_with_retry(self, prompt, max_retries=None):
-        """Appelle Mistral avec retry sur toutes les clés disponibles"""
+        """Appelle Mistral avec retry"""
+        if DEMO_MODE:
+            time.sleep(1)  # Simule le délai
+            return None  # Retourne None pour déclencher le mode démo
+        
+        try:
+            from mistralai import Mistral
+        except ImportError:
+            logger.error("❌ Module mistralai non installé: pip install mistralai")
+            return None
+        
         if max_retries is None:
             max_retries = len(self.api_keys)
         
@@ -142,7 +205,9 @@ class MathiaExplorer:
         
         for attempt in range(max_retries):
             try:
-                api_key = self.get_next_api_key()
+                api_key = self.api_keys[self.current_key_index % len(self.api_keys)]
+                self.current_key_index += 1
+                
                 client = Mistral(api_key=api_key)
                 
                 logger.info(f"🔑 Tentative {attempt + 1}/{max_retries}")
@@ -159,9 +224,8 @@ class MathiaExplorer:
             except Exception as e:
                 error_msg = str(e).lower()
                 
-                # Si rate limit ou capacity, essayer le modèle fallback
                 if "429" in error_msg or "capacity" in error_msg:
-                    logger.warning(f"⚠️ Rate limit/Capacity - Tentative avec modèle fallback")
+                    logger.warning(f"⚠️ Rate limit - Tentative fallback")
                     try:
                         response = client.chat.complete(
                             model=Config.MISTRAL_MODEL_FALLBACK,
@@ -177,29 +241,26 @@ class MathiaExplorer:
                 logger.warning(f"❌ Erreur tentative {attempt + 1}: {e}")
                 
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # Backoff exponentiel
+                    time.sleep(2 ** attempt)
         
-        raise Exception(f"Toutes les tentatives ont échoué: {last_exception}")
+        logger.error(f"Toutes les tentatives ont échoué: {last_exception}")
+        return None
     
     def get_cache_key(self, concept, language, detail_level):
-        """Génère une clé de cache unique et normalisée"""
+        """Génère une clé de cache unique"""
         normalized = f"{concept.lower().strip()}_{language}_{detail_level}"
         return hashlib.md5(normalized.encode()).hexdigest()
     
     def markdown_to_html(self, text):
-        """Convertit le Markdown en HTML de manière robuste"""
+        """Convertit le Markdown en HTML"""
         if not text:
             return ""
         
-        # Utiliser la bibliothèque markdown pour une conversion complète
         try:
-            html = markdown.markdown(
-                text,
-                extensions=['extra', 'nl2br']
-            )
+            import markdown
+            html = markdown.markdown(text, extensions=['extra', 'nl2br'])
             return html
         except:
-            # Fallback vers la conversion basique
             text = text.strip()
             text = re.sub(r'\*\*([^*]+?)\*\*', r'<strong>\1</strong>', text)
             text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<em>\1</em>', text)
@@ -236,7 +297,7 @@ class MathiaExplorer:
         }
         word_count = word_counts.get(detail_level, word_counts['moyen'])
         
-        prompt = f"""Tu es Mathia, un expert en mathématiques passionné par la vulgarisation. Ta mission est d'expliquer des concepts mathématiques de manière claire, structurée et accessible.
+        prompt = f"""Tu es Mathia, un expert en mathématiques passionné par la vulgarisation.
 
 **Concept à explorer:** "{concept}"
 
@@ -245,40 +306,14 @@ class MathiaExplorer:
 **Instructions:**
 Fournis une explication complète en {word_count}, structurée ainsi:
 
-1. **DÉFINITION** (2-3 phrases claires)
-   - Explique ce qu'est le concept en termes simples
-   - Donne le contexte mathématique
-
+1. **DÉFINITION** (2-3 phrases)
 2. **EXPLICATION DÉTAILLÉE** (plusieurs paragraphes)
-   - Développe le concept en profondeur
-   - Explique les propriétés importantes
-   - Montre le fonctionnement
-
-3. **EXEMPLES CONCRETS** (3-5 exemples)
-   - Exemples mathématiques précis avec calculs
-   - Cas simples puis plus complexes
-   - Applications pratiques
-
-4. **CONCEPTS LIÉS** (4-6 concepts)
-   - Liste des concepts connexes
-   - Lien avec le concept principal
-
-5. **IMPORTANCE**
-   - Applications réelles
-   - Pourquoi c'est fondamental en mathématiques
-
+3. **EXEMPLES CONCRETS** (3-5 exemples avec calculs)
+4. **CONCEPTS LIÉS** (4-6 concepts connexes)
+5. **IMPORTANCE** (applications réelles)
 6. **CONSEIL D'APPRENTISSAGE**
-   - Un conseil pratique pour la compréhension
 
-**Format:**
-- Écris en paragraphes naturels et fluides
-- Utilise un langage accessible mais précis
-- Sois pédagogique et encourageant
-- Structure avec des transitions
-- Utilise le markdown pour la mise en forme (gras, italique)
-- Évite les listes à puces, privilégie la prose
-
-Réponds maintenant:"""
+Utilise le markdown pour la mise en forme. Réponds maintenant:"""
         
         return prompt
     
@@ -295,15 +330,14 @@ Réponds maintenant:"""
         if len(concept) > Config.MAX_CONCEPT_LENGTH:
             return False, f"Le concept ne doit pas dépasser {Config.MAX_CONCEPT_LENGTH} caractères"
         
-        # Vérifier les caractères suspects
         if re.search(r'[<>{}]', concept):
             return False, "Le concept contient des caractères non autorisés"
         
         return True, concept
     
     def process_concept(self, concept, language='fr', detail_level='moyen'):
-        """Traite un concept mathématique complet"""
-        logger.info(f"🔍 Nouvelle requête: '{concept}' (langue={language}, détail={detail_level})")
+        """Traite un concept mathématique"""
+        logger.info(f"🔍 Requête: '{concept}' (langue={language}, détail={detail_level})")
         self.stats['requests'] += 1
         start_time = time.time()
         
@@ -311,6 +345,7 @@ Réponds maintenant:"""
         is_valid, result = self.validate_concept(concept)
         if not is_valid:
             self.stats['errors'] += 1
+            logger.error(f"❌ Validation échouée: {result}")
             return {'success': False, 'error': result}
         
         concept = result
@@ -325,24 +360,26 @@ Réponds maintenant:"""
             cached_result['from_cache'] = True
             return cached_result
         
-        logger.info("🔄 Cache MISS - Génération avec Mistral")
+        logger.info("🔄 Cache MISS - Génération")
         
         try:
-            # Construire et exécuter le prompt
+            # Construire le prompt
             prompt = self.build_prompt(concept, language, detail_level)
+            
+            # Appeler Mistral
             ai_response = self.call_mistral_with_retry(prompt)
             
+            # Si pas de réponse (mode démo ou erreur), générer explication démo
             if not ai_response:
-                raise Exception("Réponse vide de Mistral")
+                logger.info("📝 Mode DÉMO - Génération d'une explication exemple")
+                formatted_response = self.generate_demo_explanation(concept, language, detail_level)
+            else:
+                formatted_response = self.markdown_to_html(ai_response)
             
-            # Convertir en HTML
-            formatted_response = self.markdown_to_html(ai_response)
-            
-            # Calculer le temps de traitement
+            # Temps de traitement
             processing_time = round(time.time() - start_time, 2)
             self.processing_times.append(processing_time)
             
-            # Mettre à jour les statistiques
             if self.processing_times:
                 self.stats['avg_processing_time'] = round(
                     sum(self.processing_times) / len(self.processing_times), 2
@@ -355,9 +392,10 @@ Réponds maintenant:"""
                 'processing_time': processing_time,
                 'detail_level': detail_level,
                 'language': language,
-                'source': 'mistral_ai',
+                'source': 'demo' if DEMO_MODE else 'mistral_ai',
                 'from_cache': False,
-                'cache_size': self.cache.size()
+                'cache_size': self.cache.size(),
+                'demo_mode': DEMO_MODE
             }
             
             # Mettre en cache
@@ -368,17 +406,16 @@ Réponds maintenant:"""
             return result
             
         except Exception as e:
-            logger.error(f"❌ Erreur: {str(e)}", exc_info=True)
+            logger.error(f"❌ Erreur: {str(e)}")
+            logger.error(traceback.format_exc())
             self.stats['errors'] += 1
             return {
                 'success': False,
                 'error': f'Erreur lors du traitement: {str(e)}'
             }
 
-
 # Instance globale
 mathia = MathiaExplorer()
-
 
 # Routes
 @app.route('/')
@@ -386,28 +423,32 @@ def index():
     """Interface principale"""
     return render_template_string(MATHIA_TEMPLATE)
 
-
 @app.route('/api/explore', methods=['POST', 'OPTIONS'])
 def explore():
     """API d'exploration de concepts"""
     
-    logger.info(f"📨 Requête reçue: {request.method} depuis {request.remote_addr}")
+    logger.info(f"📨 Requête {request.method} depuis {request.remote_addr}")
     
     # CORS preflight
     if request.method == 'OPTIONS':
-        logger.info("✅ OPTIONS request - returning 204")
+        logger.info("✅ OPTIONS request - 204")
         return '', 204
     
     try:
+        # Log des headers
+        logger.debug(f"Headers: {dict(request.headers)}")
+        logger.debug(f"Content-Type: {request.content_type}")
+        
         # Validation du Content-Type
         if not request.is_json:
             logger.error(f"❌ Content-Type invalide: {request.content_type}")
             return jsonify({
                 'success': False,
-                'error': 'Content-Type doit être application/json'
+                'error': f'Content-Type doit être application/json (reçu: {request.content_type})'
             }), 400
         
         data = request.get_json()
+        logger.debug(f"Données reçues: {data}")
         
         if not data:
             logger.error("❌ Corps JSON vide")
@@ -416,7 +457,7 @@ def explore():
                 'error': 'Corps de requête JSON requis'
             }), 400
         
-        # Extraction et validation des paramètres
+        # Extraction des paramètres
         concept = data.get('concept', '').strip()
         language = data.get('language', 'fr')
         detail_level = data.get('detail_level', 'moyen')
@@ -441,18 +482,19 @@ def explore():
         
         if not result.get('success'):
             logger.error(f"❌ Échec: {result.get('error')}")
-            return jsonify(result), 500
+            return jsonify(result), 400  # Changé de 500 à 400
         
         logger.info(f"✅ Succès en {result.get('processing_time')}s")
         return jsonify(result), 200
         
     except Exception as e:
-        logger.error(f"💥 Erreur: {str(e)}", exc_info=True)
+        logger.error(f"💥 Erreur serveur: {str(e)}")
+        logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
-            'error': f'Erreur interne: {str(e)}'
+            'error': f'Erreur interne: {str(e)}',
+            'details': traceback.format_exc() if app.debug else None
         }), 500
-
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
@@ -461,11 +503,11 @@ def get_stats():
         stats = mathia.stats.copy()
         stats['cache_size'] = mathia.cache.size()
         stats['cache_max_size'] = Config.CACHE_MAX_SIZE
+        stats['demo_mode'] = DEMO_MODE
         return jsonify(stats), 200
     except Exception as e:
         logger.error(f"Erreur stats: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/health')
 def health():
@@ -473,13 +515,13 @@ def health():
     return jsonify({
         'status': 'OK',
         'service': 'Mathia Explorer',
-        'version': '4.1',
-        'api_keys_configured': len(Config.API_KEYS),
+        'version': '4.2',
+        'demo_mode': DEMO_MODE,
+        'api_keys_configured': len(Config.API_KEYS) if not DEMO_MODE else 0,
         'cache_size': mathia.cache.size()
     }), 200
 
-
-# Template HTML CORRIGÉ avec styles fixes
+# Template HTML
 MATHIA_TEMPLATE = '''<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -494,7 +536,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             --gradient-end: #f77f00;
         }
         
-        /* THÈME LIGHT (par défaut) */
         body {
             --bg-primary: linear-gradient(135deg, #e63946 0%, #f77f00 100%);
             --bg-secondary: rgba(255, 255, 255, 0.25);
@@ -517,7 +558,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             --placeholder-color: rgba(255, 255, 255, 0.8);
         }
         
-        /* THÈME DARK */
         body[data-theme="dark"] {
             --bg-primary: #0d1b2a;
             --bg-secondary: #1b263b;
@@ -550,7 +590,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             transition: all 0.3s ease;
         }
         
-        /* Header fixe */
         .top-header {
             position: fixed;
             top: 0;
@@ -579,8 +618,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             align-items: center;
         }
         
-        .language-selector,
-        .theme-toggle {
+        .language-selector, .theme-toggle {
             background: var(--button-bg);
             border: 1px solid var(--border-color);
             border-radius: 15px;
@@ -589,7 +627,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             font-size: 0.9rem;
             color: var(--text-primary);
             transition: all 0.2s ease;
-            box-shadow: 0 2px 10px var(--shadow);
         }
         
         .theme-toggle {
@@ -597,13 +634,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             font-size: 1.2rem;
         }
         
-        .language-selector:hover,
-        .theme-toggle:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px var(--shadow-strong);
-        }
-        
-        /* Container principal */
         .container {
             flex: 1;
             padding: 100px 30px 30px;
@@ -615,7 +645,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             gap: 30px;
         }
         
-        /* Section titre */
         .title-section {
             text-align: center;
             margin-bottom: 20px;
@@ -626,7 +655,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             font-weight: 700;
             margin-bottom: 10px;
             color: var(--text-primary);
-            text-shadow: 0 2px 10px var(--shadow);
         }
         
         .subtitle {
@@ -634,7 +662,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             font-size: 1.15rem;
         }
         
-        /* Stats */
         .stats {
             display: flex;
             justify-content: center;
@@ -651,17 +678,14 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             border-radius: 15px;
             font-size: 0.9rem;
             color: var(--text-secondary);
-            box-shadow: 0 4px 15px var(--shadow);
         }
         
-        /* Section formulaire */
         .form-section {
             background: var(--bg-secondary);
             backdrop-filter: blur(20px);
             border: 1px solid var(--border-color);
             border-radius: 25px;
             padding: 30px;
-            box-shadow: 0 8px 30px var(--shadow);
         }
         
         .form-group {
@@ -686,7 +710,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             color: var(--text-primary);
             outline: none;
             transition: all 0.3s ease;
-            box-shadow: 0 4px 15px var(--shadow);
         }
         
         .input:focus {
@@ -699,40 +722,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             color: var(--placeholder-color);
         }
         
-        /* Sélecteur de détail */
-        .detail-selector {
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-        
-        .detail-btn {
-            background: var(--button-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 15px;
-            padding: 12px 20px;
-            font-size: 0.9rem;
-            color: var(--text-tertiary);
-            cursor: pointer;
-            transition: all 0.2s ease;
-            flex: 1;
-            min-width: 150px;
-            box-shadow: 0 4px 15px var(--shadow);
-        }
-        
-        .detail-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px var(--shadow-strong);
-        }
-        
-        .detail-btn.active {
-            background: var(--button-active);
-            color: var(--text-primary);
-            border-color: var(--border-color-strong);
-            font-weight: 600;
-        }
-        
-        /* Suggestions */
         .suggestions {
             margin-top: 15px;
         }
@@ -753,16 +742,43 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             color: var(--text-secondary);
             cursor: pointer;
             transition: all 0.2s ease;
-            box-shadow: 0 2px 10px var(--shadow);
         }
         
         .chip:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 15px var(--shadow-strong);
             background: var(--button-active);
         }
         
-        /* Boutons */
+        .detail-selector {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .detail-btn {
+            background: var(--button-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 15px;
+            padding: 12px 20px;
+            font-size: 0.9rem;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .detail-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .detail-btn.active {
+            background: var(--button-active);
+            color: var(--text-primary);
+            border-color: var(--border-color-strong);
+            font-weight: 600;
+        }
+        
         .controls {
             display: flex;
             justify-content: center;
@@ -781,12 +797,10 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             color: var(--text-primary);
             cursor: pointer;
             transition: all 0.2s ease;
-            box-shadow: 0 4px 15px var(--shadow);
         }
         
         .btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px var(--shadow-strong);
         }
         
         .btn-primary {
@@ -801,7 +815,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             transform: none;
         }
         
-        /* Status */
         .status {
             background: var(--bg-secondary);
             backdrop-filter: blur(20px);
@@ -809,7 +822,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             border-radius: 20px;
             padding: 25px;
             display: none;
-            box-shadow: 0 8px 30px var(--shadow);
         }
         
         .status.active {
@@ -841,7 +853,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
         }
         
-        /* Résultat */
         .result {
             background: var(--bg-secondary);
             backdrop-filter: blur(20px);
@@ -849,7 +860,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             border-radius: 25px;
             padding: 30px;
             display: none;
-            box-shadow: 0 8px 30px var(--shadow);
         }
         
         .result.active {
@@ -883,7 +893,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             font-size: 1rem;
             color: var(--text-primary);
             transition: all 0.2s ease;
-            box-shadow: 0 2px 10px var(--shadow);
         }
         
         .copy-btn:hover {
@@ -911,6 +920,11 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             font-weight: 600;
         }
         
+        .result-content h2, .result-content h3 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        
         .cache-badge {
             display: inline-block;
             background: rgba(74, 222, 128, 0.2);
@@ -923,7 +937,18 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             margin-left: 10px;
         }
         
-        /* Loading spinner */
+        .demo-badge {
+            display: inline-block;
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.4);
+            color: #ffc107;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
         .loading {
             display: inline-block;
             width: 20px;
@@ -935,7 +960,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             animation: spin 1s ease-in-out infinite;
         }
         
-        /* Notifications */
         .notification {
             position: fixed;
             top: 90px;
@@ -967,7 +991,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             background: rgba(247, 127, 0, 0.95);
         }
         
-        /* Animations */
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
@@ -994,17 +1017,11 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             }
         }
         
-        /* Responsive */
         @media (max-width: 768px) {
             .top-header {
                 padding: 15px 20px;
                 flex-direction: column;
                 gap: 15px;
-            }
-            
-            .header-controls {
-                width: 100%;
-                justify-content: space-between;
             }
             
             .container {
@@ -1013,43 +1030,6 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             
             .title {
                 font-size: 2rem;
-            }
-            
-            .stats {
-                gap: 10px;
-            }
-            
-            .stat-item {
-                padding: 8px 15px;
-                font-size: 0.8rem;
-            }
-            
-            .detail-selector {
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .detail-btn {
-                min-width: auto;
-            }
-            
-            .controls {
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .btn {
-                width: 100%;
-            }
-            
-            .result-header {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-            
-            .result-title {
-                margin-right: 0;
-                margin-bottom: 15px;
             }
         }
     </style>
@@ -1180,6 +1160,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 explanation_generated: "Explication générée !",
                 processing_error: "Erreur d'exploration",
                 from_cache: "Depuis le cache",
+                demo_mode: "Mode Démo",
                 rate_limit_error: "Trop de requêtes. Patientez quelques instants."
             },
             en: {
@@ -1213,6 +1194,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 explanation_generated: "Explanation generated!",
                 processing_error: "Exploration error",
                 from_cache: "From cache",
+                demo_mode: "Demo Mode",
                 rate_limit_error: "Too many requests. Please wait a moment."
             },
             es: {
@@ -1246,6 +1228,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 explanation_generated: "¡Explicación generada!",
                 processing_error: "Error de exploración",
                 from_cache: "Desde caché",
+                demo_mode: "Modo Demo",
                 rate_limit_error: "Demasiadas solicitudes. Espere un momento."
             }
         };
@@ -1261,6 +1244,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         });
 
         function initializeApp() {
+            console.log('🚀 Application initialisée');
             loadTheme();
             loadLanguage();
             initializeSuggestions();
@@ -1364,6 +1348,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
         function handleFormSubmit(event) {
             event.preventDefault();
+            console.log('📝 Formulaire soumis');
             
             if (isProcessing) {
                 showNotification(translations[currentLanguage].already_processing, 'info');
@@ -1372,6 +1357,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
 
             const conceptInput = document.getElementById('concept');
             const concept = conceptInput ? conceptInput.value.trim() : '';
+            
+            console.log('🔍 Concept:', concept);
             
             if (!concept || concept.length < 2) {
                 showNotification(translations[currentLanguage].invalid_concept, 'error');
@@ -1411,10 +1398,11 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 const response = await fetch('/api/stats');
                 if (response.ok) {
                     const stats = await response.json();
+                    console.log('📊 Stats:', stats);
                     updateStatsDisplay(stats);
                 }
             } catch (error) {
-                console.log('Stats error:', error);
+                console.log('⚠️ Stats error:', error);
             }
         }
 
@@ -1431,6 +1419,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
         }
 
         async function processConcept(concept, language, detailLevel) {
+            console.log('🚀 Traitement du concept:', concept);
             isProcessing = true;
             const exploreBtn = document.getElementById('exploreBtn');
             const exploreText = exploreBtn ? exploreBtn.querySelector('[data-text-key="explore"]') : null;
@@ -1450,7 +1439,7 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     detail_level: detailLevel
                 };
                 
-                console.log('🚀 Requête:', requestData);
+                console.log('📤 Envoi requête:', requestData);
                 
                 updateProgress(20);
                 updateStatus(translations[currentLanguage].analyzing);
@@ -1464,39 +1453,54 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                     body: JSON.stringify(requestData)
                 });
 
-                console.log('📡 Réponse:', response.status);
+                console.log('📥 Réponse status:', response.status);
+                console.log('📥 Réponse headers:', [...response.headers.entries()]);
 
                 updateProgress(60);
                 updateStatus(translations[currentLanguage].generating);
 
+                const contentType = response.headers.get('content-type');
+                console.log('📋 Content-Type:', contentType);
+
                 if (!response.ok) {
                     let errorMessage = `HTTP ${response.status}`;
+                    
                     try {
-                        const contentType = response.headers.get('content-type');
-                        
                         if (contentType && contentType.includes('application/json')) {
                             const errorData = await response.json();
+                            console.error('❌ Erreur JSON:', errorData);
                             errorMessage = errorData.error || errorMessage;
                         } else {
                             const errorText = await response.text();
+                            console.error('❌ Erreur texte:', errorText.substring(0, 500));
                             errorMessage = errorText.substring(0, 200);
                         }
                     } catch (e) {
-                        console.error('Erreur parsing:', e);
+                        console.error('❌ Erreur parsing:', e);
                     }
                     
                     if (response.status === 429) {
                         throw new Error(translations[currentLanguage].rate_limit_error);
                     }
                     
+                    if (response.status === 404) {
+                        throw new Error('Endpoint non trouvé (404). Vérifiez que le serveur est bien démarré.');
+                    }
+                    
                     throw new Error(errorMessage);
                 }
 
-                const data = await response.json();
-                console.log('✅ Succès');
+                let data;
+                try {
+                    data = await response.json();
+                    console.log('✅ Données reçues:', data);
+                } catch (e) {
+                    console.error('❌ Erreur parsing JSON:', e);
+                    throw new Error('Réponse invalide du serveur');
+                }
 
                 if (!data.success) {
-                    throw new Error(data.error || 'Unknown error');
+                    throw new Error(data.error || 'Erreur inconnue');
                 }
 
                 updateProgress(100);
@@ -1510,7 +1514,8 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 showNotification(translations[currentLanguage].explanation_generated, 'success');
 
             } catch (error) {
-                console.error('💥 Erreur:', error);
+                console.error('💥 Erreur complète:', error);
+                console.error('💥 Stack:', error.stack);
                 showNotification(error.message || translations[currentLanguage].processing_error, 'error');
                 hideStatus();
             } finally {
@@ -1560,9 +1565,14 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
             
             if (elements.content) elements.content.innerHTML = data.explanation;
             
-            let metaText = `🤖 Mistral AI • ${data.processing_time}s • ${data.detail_level}`;
+            let metaText = `🤖 ${data.source === 'demo' ? 'Demo' : 'Mistral AI'} • ${data.processing_time}s • ${data.detail_level}`;
+            
             if (data.from_cache) {
                 metaText += ` • <span class="cache-badge">💾 ${translations[currentLanguage].from_cache}</span>`;
+            }
+            
+            if (data.demo_mode) {
+                metaText += ` • <span class="demo-badge">⚠️ ${translations[currentLanguage].demo_mode}</span>`;
             }
             
             if (elements.meta) elements.meta.innerHTML = metaText;
@@ -1621,13 +1631,20 @@ MATHIA_TEMPLATE = '''<!DOCTYPE html>
                 }
             }
         });
+
+        // Test de connexion au démarrage
+        console.log('🔗 Test de connexion API...');
+        fetch('/health')
+            .then(r => r.json())
+            .then(data => console.log('✅ Health check:', data))
+            .catch(e => console.error('❌ Health check échoué:', e));
     </script>
 </body>
 </html>'''
 
 if __name__ == '__main__':
     print("=" * 70)
-    print("🔢 MATHIA V4.1 - Explorateur Mathématique avec IA (CORRIGÉ)")
+    print("🔢 MATHIA V4.2 - Explorateur Mathématique IA (CORRIGÉ)")
     print("=" * 70)
     
     try:
@@ -1637,16 +1654,27 @@ if __name__ == '__main__':
         print(f"\n⚙️  Configuration:")
         print(f"   • Port: {port}")
         print(f"   • Debug: {debug_mode}")
-        print(f"   • Clés API: {len(Config.API_KEYS)}")
+        print(f"   • Mode: {'DÉMO' if DEMO_MODE else 'PRODUCTION'}")
+        if not DEMO_MODE:
+            print(f"   • Clés API: {len(Config.API_KEYS)}")
         print(f"   • Cache Max: {Config.CACHE_MAX_SIZE} entrées")
         
         print("\n✨ Corrections apportées:")
-        print("   ✅ Système de thème CSS corrigé (variables CSS)")
-        print("   ✅ Contraste texte/fond optimisé pour les deux thèmes")
-        print("   ✅ Thème light par défaut sans data-attribute")
-        print("   ✅ Thème dark avec data-theme='dark'")
-        print("   ✅ Tous les éléments visibles et lisibles")
-        print("   ✅ Transitions fluides entre thèmes")
+        print("   ✅ Gestion d'erreurs renforcée")
+        print("   ✅ Logs de debugging détaillés (console navigateur + serveur)")
+        print("   ✅ Mode DÉMO si pas de clé API configurée")
+        print("   ✅ Messages d'erreur explicites")
+        print("   ✅ CORS corrigé")
+        print("   ✅ Validation robuste des requêtes")
+        print("   ✅ Health check au démarrage")
+        
+        if DEMO_MODE:
+            print("\n⚠️  MODE DÉMONSTRATION ACTIVÉ")
+            print("   L'application fonctionne sans API Mistral.")
+            print("   Pour activer Mistral AI:")
+            print("   1. Obtenez une clé sur: https://console.mistral.ai/")
+            print("   2. Exécutez: export MISTRAL_API_KEY='votre_clé'")
+            print("   3. Relancez l'application")
         
         print("\n📍 Routes:")
         print("   • GET  /            → Interface utilisateur")
@@ -1654,8 +1682,14 @@ if __name__ == '__main__':
         print("   • GET  /api/stats   → Statistiques")
         print("   • GET  /health      → Health check")
         
+        print("\n🔍 Debugging:")
+        print("   • Ouvrez la console du navigateur (F12)")
+        print("   • Regardez les logs serveur ci-dessous")
+        print("   • Tous les détails y seront affichés")
+        
         print("\n🚀 Démarrage du serveur...")
         print("=" * 70)
+        print()
         
         app.run(host='0.0.0.0', port=port, debug=debug_mode)
         
@@ -1665,4 +1699,6 @@ if __name__ == '__main__':
         exit(1)
     except Exception as e:
         print(f"\n❌ ERREUR FATALE: {e}")
+        import traceback
+        traceback.print_exc()
         exit(1)
